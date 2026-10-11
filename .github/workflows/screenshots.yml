@@ -1,0 +1,83 @@
+name: Marketing screenshots
+
+# Drives the real packaged Windows build over the DevTools protocol and
+# captures the marketing screenshots (README + landing page). The PNG masters
+# produced here are the only ones that ship: Windows fonts and rendering are
+# what the reader actually uses, so Linux or macOS captures are debug aids.
+#
+# PNG masters travel two ways: as the `marketing-screenshots` artifact, and —
+# because artifact downloads are sometimes unavailable to the person doing the
+# WebP conversion — pushed to a throwaway `screenshots/masters-<run>` branch.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'scripts/capture-screenshots.mjs'
+      - '.github/workflows/screenshots.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Builds are unsigned: never search the runner for a code-signing identity.
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  capture:
+    name: Capture on Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies (downloads the Windows Electron runtime)
+        run: npm ci
+      - name: Build the unpacked Windows app
+        run: npm run build:win
+      - name: Verify packaged contents
+        run: node scripts/check-packaged-app.mjs dist/win-unpacked/resources/app.asar
+      - name: Report the runner desktop resolution
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          Write-Host "Virtual screen: $($screen.Width)x$($screen.Height) at $($screen.X),$($screen.Y)"
+      - name: Capture screenshots from the packaged app
+        shell: pwsh
+        run: |
+          node scripts/capture-screenshots.mjs --app "dist/win-unpacked/Cambuz PDF Reader.exe" --out screenshots/win --timeout 240
+      - name: Upload PNG masters and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: marketing-screenshots
+          path: |
+            screenshots/win/*.png
+            screenshots/win/capture-report.json
+            screenshots/win/capture-log.txt
+            screenshots/win/app-output.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish PNG masters to a throwaway branch
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'screenshots/win')) { Write-Host 'No capture output to publish'; exit 0 }
+          $branch = "screenshots/masters-${{ github.run_number }}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b $branch
+          git add -f screenshots/win
+          git commit -m "Screenshot masters from run ${{ github.run_id }}"
+          git push -f origin $branch
+          Write-Host "::notice title=Screenshot masters::pushed to $branch (run ${{ github.run_id }})"
