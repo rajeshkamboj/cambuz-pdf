@@ -392,6 +392,25 @@ export class SearchController {
     this.deps.onStatus(
       `${total} match${total === 1 ? '' : 'es'} for “${truncate(q, 40)}”`
     );
+    this.deps.onMarksChanged?.();
+  }
+
+  /**
+   * Turn case-sensitive matching on or off and re-run the current query. The
+   * comparison text is rebuilt per page (the page text cache is reused).
+   */
+  async setMatchCase(enabled) {
+    const next = Boolean(enabled);
+    if (next === this.matchCase) return;
+    this.matchCase = next;
+    const requery = this.query;
+    if (!requery) {
+      this.deps.onCount('');
+      return;
+    }
+    // Force setQuery to run the same needle again with the new comparison.
+    this.query = '';
+    await this.setQuery(requery);
   }
 
   async #countPageMatches(doc, pageNum, query, token) {
@@ -455,6 +474,7 @@ export class SearchController {
       this.applyHighlights();
     }
     this.updateCount();
+    this.deps.onMarksChanged?.();
   }
 
   /** Move to the previous match (wrapping around the document). */
@@ -475,6 +495,7 @@ export class SearchController {
       this.applyHighlights();
     }
     this.updateCount();
+    this.deps.onMarksChanged?.();
   }
 
   #findPageWithMatches(fromPage, dir) {
@@ -487,17 +508,18 @@ export class SearchController {
   }
 
   /**
-   * Highlight all matches on the currently rendered page and mark the
-   * current one. Called after every text-layer render while a query is
-   * active. Safe to call when there is no query (clears marks).
+   * Highlight all matches in one text layer and mark the current one. Called
+   * after every text-layer render while a query is active. Defaults to the
+   * page on screen (single-page mode); continuous mode passes the page and
+   * text layer of each rendered slot. Safe to call with no query (clears
+   * marks).
    */
-  applyHighlights() {
-    const tl = this.deps.getTextLayerEl();
+  applyHighlights({ page = this.deps.getCurrentPage(), textLayerEl = this.deps.getTextLayerEl() } = {}) {
+    const tl = textLayerEl;
     if (!tl) return;
-    this.clearMarks();
+    this.clearMarks(tl);
     if (!this.query || !this.total || !this.pageMatches) return;
 
-    const page = this.deps.getCurrentPage();
     const pm = this.pageMatches[page];
     if (!pm || pm.count === 0) return;
 
@@ -550,15 +572,21 @@ export class SearchController {
       segment.node.appendChild(frag);
     });
 
+    // Only drag the viewport for the page the reader is on: pages rendered
+    // ahead must not steal the scroll position.
     const current = tl.querySelector('mark.search-highlight.current');
-    if (current && typeof current.scrollIntoView === 'function') {
+    if (
+      page === this.deps.getCurrentPage() &&
+      current &&
+      typeof current.scrollIntoView === 'function'
+    ) {
       current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   }
 
-  /** Remove all highlight marks from the current text layer. */
-  clearMarks() {
-    const tl = this.deps.getTextLayerEl();
+  /** Remove all highlight marks from one text layer. */
+  clearMarks(textLayerEl = this.deps.getTextLayerEl()) {
+    const tl = textLayerEl;
     if (!tl) return;
     const marks = tl.querySelectorAll('mark.search-highlight');
     for (const mark of marks) {
@@ -624,6 +652,7 @@ export class SearchController {
     this.searching = false;
     this.clearMarks();
     this.deps.onCount('');
+    this.deps.onMarksChanged?.();
   }
 
   /** Drop query state and every retained page string when a document closes. */

@@ -31,6 +31,8 @@ import { SecurityController } from './pdf-security-ui.js';
 import { OcrController } from './pdf-ocr-ui.js';
 import { pageStatusMessage } from './text-selection.js';
 import { getCanvasRenderSize } from './canvas-budget.js';
+import { ContinuousView } from './continuous-view.js';
+import { scaledSize } from './continuous-layout.js';
 import {
   NO_SECURITY,
   classifyPasswordError,
@@ -77,6 +79,15 @@ let currentRecentId = null;
 let originalPdfBytes = null; // stable copy retained for print preparation
 let documentGeneration = 0;
 
+// Page layout: 'single' keeps one page on screen (the original behaviour),
+// 'continuous' stacks every page in one scrolling column. The choice is
+// remembered between sessions.
+let viewMode = 'single';
+let continuousView = null;
+const basePageSizes = new Map(); // pageNum -> unrotated page size at scale 1
+const measureRequests = new Map(); // in-flight page-size reads
+const renderedViewports = new Map(); // pageNum -> viewport currently painted
+
 // Phase 5: security state of the open document and the viewport of the page
 // that is currently on screen (used to place form fields over it).
 let documentSecurity = NO_SECURITY;
@@ -98,7 +109,9 @@ const elements = {
   welcomeScreen: document.getElementById('welcome-screen'),
   pdfViewer: document.getElementById('pdf-viewer'),
   pdfContainer: document.getElementById('pdf-container'),
+  pdfColumn: document.getElementById('pdf-column'),
   pageWrapper: document.getElementById('page-wrapper'),
+  formLayer: document.getElementById('form-layer'),
   pdfCanvas: document.getElementById('pdf-canvas'),
   textLayer: document.getElementById('text-layer'),
   dropOverlay: document.getElementById('drop-overlay'),
@@ -117,6 +130,8 @@ const elements = {
   btnZoomOut: document.getElementById('btn-zoom-out'),
   btnFitPage: document.getElementById('btn-fit-page'),
   btnFitWidth: document.getElementById('btn-fit-width'),
+  btnViewMode: document.getElementById('btn-view-mode'),
+  viewModeLabel: document.getElementById('view-mode-label'),
   btnTheme: document.getElementById('btn-theme'),
   btnWelcomeOpen: document.getElementById('btn-welcome-open'),
   btnSample: document.getElementById('btn-sample'),
@@ -147,6 +162,7 @@ const elements = {
   searchBar: document.getElementById('search-bar'),
   searchInput: document.getElementById('search-input'),
   searchCount: document.getElementById('search-count'),
+  searchMatchCase: document.getElementById('search-match-case'),
   btnSearchPrev: document.getElementById('btn-search-prev'),
   btnSearchNext: document.getElementById('btn-search-next'),
   btnSearchClose: document.getElementById('btn-search-close'),
@@ -263,6 +279,14 @@ async function commitLoadedDocument({
     documentSecurity = security;
     openedWithPassword = candidateOpenedWithPassword;
     documentGeneration += 1;
+    // The previous document's column (if any) is torn down; continuous mode
+    // mounts a fresh one for the new document on the initial render below.
+    continuousView?.unmount();
+    basePageSizes.clear();
+    measureRequests.clear();
+    renderedViewports.clear();
+    lastViewport = null;
+    lastViewportPage = 0;
     totalPages = doc.numPages;
     currentFileName = fileName || 'Document';
     currentFileSize = meta.size || stableBytes.byteLength;
@@ -329,9 +353,9 @@ async function commitLoadedDocument({
     // Phase 5: enforce the permissions this document carries.
     applyDocumentAvailability();
 
-    // Show viewer, hide welcome.
+    // Show viewer, hide welcome — in the layout mode the reader chose.
     elements.welcomeScreen.style.display = 'none';
-    elements.pdfViewer.style.display = 'flex';
+    applyViewModeLayout();
     elements.errorDisplay.style.display = 'none';
 
     // Title and status.
@@ -494,6 +518,12 @@ function closePDF() {
   sidebar.closeDocument();
   sidebar.setOpen(false);
 
+  continuousView?.unmount();
+  placeFormLayer(1);
+  basePageSizes.clear();
+  measureRequests.clear();
+  renderedViewports.clear();
+
   if (pdfDoc) {
     pdfDoc.destroy().catch(() => {});
   }
@@ -534,6 +564,10 @@ function closePDF() {
 
   // Reset UI.
   elements.pdfViewer.style.display = 'none';
+  elements.pdfViewer.classList.remove('continuous');
+  elements.pdfViewer.style.padding = '';
+  elements.pdfContainer.style.display = '';
+  elements.pdfColumn.hidden = true;
   elements.welcomeScreen.style.display = 'flex';
   elements.docTitle.textContent = 'Cambuz PDF Reader';
   setStatus('Ready');
@@ -601,6 +635,7 @@ function applySecurityRestrictions() {
   // searched) but it cannot be selected or copied out.
   const copyBlocked = isBlocked(documentSecurity, 'copy');
   elements.textLayer.classList.toggle('no-copy', copyBlocked);
+  continuousView?.setTextLayerClass('no-copy', copyBlocked);
   // OCR converts visible page pixels back into text, so it must respect the
   // same no-copy permission as native PDF text selection/copying.
   ocrUi?.setDocumentAvailable(available && !copyBlocked);
@@ -653,6 +688,136 @@ function toggleForms() {
     return;
   }
   forms?.toggle();
+}
+
+// --- Page layout mode: continuous scroll or single page ---------------------
+
+const VIEW_MODE_KEY = 'cambuz.viewMode';
+const DEFAULT_VIEW_MODE = 'single';
+
+function readStoredViewMode() {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    if (stored === 'continuous' || stored === 'single') return stored;
+  } catch (_) {
+    // Storage can be unavailable (private mode); fall back to the default.
+  }
+  return DEFAULT_VIEW_MODE;
+}
+
+function storeViewMode(mode) {
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch (_) {
+    // Remembering the choice is best-effort only.
+  }
+}
+
+function updateViewModeUi() {
+  const continuous = viewMode === 'continuous';
+  const button = elements.btnViewMode;
+  if (!button) return;
+  button.setAttribute('aria-pressed', continuous ? 'true' : 'false');
+  button.classList.toggle('active', continuous);
+  button.title = continuous
+    ? 'Page layout: continuous scroll — click for one page at a time (Ctrl+Shift+M)'
+    : 'Page layout: single page — click for continuous scroll (Ctrl+Shift+M)';
+  if (elements.viewModeLabel) {
+    elements.viewModeLabel.textContent = continuous ? 'Scroll' : 'Page';
+  }
+}
+
+/** Show the container that matches the current mode (and document state). */
+function applyViewModeLayout() {
+  const continuous = viewMode === 'continuous';
+  const documentOpen = Boolean(pdfDoc);
+  elements.pdfViewer.classList.toggle('continuous', continuous);
+  elements.pdfContainer.style.display = continuous ? 'none' : '';
+  elements.pdfColumn.hidden = !continuous;
+  elements.pdfViewer.style.padding = continuous ? '0' : '';
+  if (documentOpen) elements.pdfViewer.style.display = continuous ? 'block' : 'flex';
+}
+
+/**
+ * Move #form-layer into the page it belongs to: the single page wrapper, or the
+ * slot of the page the reader is looking at in continuous mode.
+ */
+function placeFormLayer(pageNum) {
+  const layer = elements.formLayer;
+  if (!layer) return;
+  if (viewMode === 'continuous' && continuousView?.mounted) {
+    const slot = continuousView.slots.get(pageNum);
+    if (slot && layer.parentElement !== slot.el) slot.el.appendChild(layer);
+  } else if (layer.parentElement !== elements.pageWrapper) {
+    elements.pageWrapper.appendChild(layer);
+  }
+}
+
+/**
+ * Switch page layout. Continuous mode stacks every page in one scrollable
+ * column (only the pages around the reader are rendered); single-page mode
+ * renders the current page alone. The choice is remembered between sessions.
+ */
+async function setViewMode(mode, { persist = true, announce = true } = {}) {
+  const next = mode === 'continuous' ? 'continuous' : 'single';
+  if (persist) storeViewMode(next);
+  viewMode = next;
+  updateViewModeUi();
+  if (next === 'single') {
+    continuousView?.unmount();
+    placeFormLayer(currentPage);
+  }
+  applyViewModeLayout();
+  if (!pdfDoc) {
+    if (announce) {
+      setStatus(
+        next === 'continuous'
+          ? 'Continuous scroll enabled — open a PDF to read it.'
+          : 'Single page view enabled — open a PDF to read it.'
+      );
+    }
+    return;
+  }
+  await renderPage(currentPage);
+  if (announce) {
+    setStatus(
+      next === 'continuous'
+        ? `Continuous scroll — page ${currentPage} of ${totalPages}`
+        : `Single page — page ${currentPage} of ${totalPages}`
+    );
+  }
+}
+
+async function toggleViewMode() {
+  await setViewMode(viewMode === 'continuous' ? 'single' : 'continuous');
+}
+
+/** Follow the reader while the column scrolls: toolbar, status, sidebar… */
+function handleContinuousPageChange(pageNum) {
+  currentPage = pageNum;
+  elements.pageInput.value = pageNum;
+  elements.btnPrev.disabled = pageNum <= 1;
+  elements.btnNext.disabled = pageNum >= totalPages;
+  updateStatusMeta();
+  updateRecentPage(currentRecentId, pageNum);
+  sidebar.setActivePage(pageNum);
+  if (sidebar.open) sidebar.scrollActiveIntoView();
+
+  // Forget viewports of pages that have left the render window.
+  for (const page of [...renderedViewports.keys()]) {
+    if (!continuousView?.slots.has(page)) renderedViewports.delete(page);
+  }
+  const viewport = renderedViewports.get(pageNum) ?? null;
+  lastViewport = viewport;
+  lastViewportPage = viewport ? pageNum : 0;
+  placeFormLayer(pageNum);
+  forms?.renderCurrentPage();
+
+  // Keep the search's "current match" and its marks on the page being read.
+  if (search?.query) {
+    search.syncCurrentToPage(pageNum);
+    refreshSearchHighlights();
+  }
 }
 
 // --- Rendering (canvas + selectable text layer) ---
@@ -758,7 +923,151 @@ async function drainRenderQueue() {
   }
 }
 
+/**
+ * Page size at scale 1 / rotation 0 (the page's own /Rotate included). Both
+ * layout modes derive every other size from this, so they always agree.
+ */
+async function measurePageSize(pageNum) {
+  const doc = pdfDoc;
+  if (!doc) return null;
+  const cached = basePageSizes.get(pageNum);
+  if (cached) return cached;
+  const generation = documentGeneration;
+  let pending = measureRequests.get(pageNum);
+  if (!pending) {
+    pending = (async () => {
+      const page = await doc.getPage(pageNum);
+      if (doc !== pdfDoc || generation !== documentGeneration) return null;
+      const viewport = page.getViewport({ scale: 1, rotation: 0 });
+      const size = { width: viewport.width, height: viewport.height };
+      if (doc === pdfDoc && generation === documentGeneration) {
+        basePageSizes.set(pageNum, size);
+      }
+      return size;
+    })()
+      .catch(() => null)
+      .finally(() => {
+        measureRequests.delete(pageNum);
+      });
+    measureRequests.set(pageNum, pending);
+  }
+  return pending;
+}
+
+/** Page size in CSS px at the current zoom and rotation, or null if unknown. */
+function displayPageSize(pageNum) {
+  const base = basePageSizes.get(pageNum);
+  return base ? scaledSize(base, currentScale, rotation) : null;
+}
+
+/**
+ * Shared text-layer painter: PDF.js positions its spans with
+ * calc(var(--scale-factor) * …), so every layer needs its own scale factor.
+ */
+async function paintTextLayer(layer, page, viewport, { isCancelled, onTask, onTaskDone }) {
+  layer.innerHTML = '';
+  layer.style.setProperty('--scale-factor', String(viewport.scale));
+  const textContent = await page.getTextContent();
+  if (isCancelled()) return;
+  const task = new pdfjsLib.TextLayer({
+    textContentSource: textContent,
+    container: layer,
+    viewport,
+  });
+  onTask?.(task);
+  try {
+    await task.render();
+  } finally {
+    onTaskDone?.(task);
+  }
+}
+
+/**
+ * Continuous mode: paint one page into its column slot. Returns the logical
+ * size that was painted (the view stores it and keeps the slot's geometry in
+ * step with the real viewport).
+ */
+async function renderSlotPage(pageNum, slot, token) {
+  const doc = pdfDoc;
+  const generation = documentGeneration;
+  const page = await doc.getPage(pageNum);
+  if (token.cancelled || doc !== pdfDoc || generation !== documentGeneration) return undefined;
+
+  const viewport = page.getViewport({ scale: currentScale, rotation });
+  const canvas = slot.canvas;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas is unavailable for this page.');
+  const size = getCanvasRenderSize(viewport.width, viewport.height, window.devicePixelRatio || 1);
+  const width = Math.floor(viewport.width);
+  const height = Math.floor(viewport.height);
+  canvas.width = size.width;
+  canvas.height = size.height;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  ctx.setTransform(size.scale, 0, 0, size.scale, 0, 0);
+
+  const task = page.render({ canvasContext: ctx, viewport });
+  token.task = task;
+  try {
+    await task.promise;
+  } finally {
+    if (token.task === task) token.task = null;
+  }
+  if (token.cancelled || generation !== documentGeneration) return undefined;
+
+  await paintTextLayer(slot.textLayer, page, viewport, {
+    isCancelled: () => token.cancelled || generation !== documentGeneration,
+    onTask: (textTask) => {
+      token.task = textTask;
+    },
+    onTaskDone: (textTask) => {
+      if (token.task === textTask) token.task = null;
+    },
+  });
+  if (token.cancelled || generation !== documentGeneration) return undefined;
+
+  // Remember where this page sits so form controls, status text and search can
+  // address the page the reader is actually looking at.
+  renderedViewports.set(pageNum, viewport);
+  if (pageNum === currentPage) {
+    lastViewport = viewport;
+    lastViewportPage = pageNum;
+    placeFormLayer(pageNum);
+    forms?.renderCurrentPage();
+    setStatus(
+      pageStatusMessage({
+        pageNumber: pageNum,
+        totalPages,
+        hasText: slot.textLayer.textContent.trim().length > 0,
+        copyBlocked: isBlocked(documentSecurity, 'copy'),
+      })
+    );
+    updateStatusMeta();
+  }
+  if (search && search.query && search.hasMatches(pageNum)) {
+    search.applyHighlights({ page: pageNum, textLayerEl: slot.textLayer });
+  }
+  return { width, height };
+}
+
+/** Continuous mode: mount the column or re-lay it out at the current zoom. */
+async function renderContinuous(pageNum) {
+  if (!pdfDoc || renderRequestsPaused || !continuousView) return;
+  const page = Math.max(1, Math.min(totalPages, pageNum));
+  if (!continuousView.mounted) {
+    await continuousView.mount({ totalPages, startPage: page });
+    return;
+  }
+  await continuousView.relayout({ anchorPage: page });
+}
+
+/** Render the current page in whichever layout mode is active. */
 function renderPage(pageNum) {
+  if (viewMode === 'continuous') return renderContinuous(pageNum);
+  return renderSinglePage(pageNum);
+}
+
+function renderSinglePage(pageNum) {
   if (!pdfDoc || renderRequestsPaused) return Promise.resolve();
   const request = makeRenderRequest(pageNum);
 
@@ -872,7 +1181,6 @@ async function renderPageNow(request) {
 }
 
 async function renderTextLayer(page, viewport, request) {
-  const layer = elements.textLayer;
   if (!isCurrentRenderRequest(request)) return;
   if (textLayerTask) {
     try {
@@ -882,21 +1190,16 @@ async function renderTextLayer(page, viewport, request) {
     }
     textLayerTask = null;
   }
-  layer.innerHTML = '';
-  // PDF.js positions text with calc(var(--scale-factor) * …) — required.
-  layer.style.setProperty('--scale-factor', String(viewport.scale));
-
-  let task = null;
   try {
-    const textContent = await page.getTextContent();
-    if (!isCurrentRenderRequest(request)) return;
-    task = new pdfjsLib.TextLayer({
-      textContentSource: textContent,
-      container: layer,
-      viewport,
+    await paintTextLayer(elements.textLayer, page, viewport, {
+      isCancelled: () => !isCurrentRenderRequest(request),
+      onTask: (task) => {
+        textLayerTask = task;
+      },
+      onTaskDone: (task) => {
+        if (textLayerTask === task) textLayerTask = null;
+      },
     });
-    textLayerTask = task;
-    await task.render();
   } catch (err) {
     if (err && (err.name === 'AbortException' || err.name === 'RenderingCancelledException')) {
       return;
@@ -904,8 +1207,6 @@ async function renderTextLayer(page, viewport, request) {
     // The canvas is already rendered; a text-layer failure only disables
     // selection/search-highlighting on this page — never a fatal error.
     if (isCurrentRenderRequest(request)) console.warn('Text layer render failed:', err);
-  } finally {
-    if (textLayerTask === task) textLayerTask = null;
   }
 }
 
@@ -921,12 +1222,42 @@ async function goToPage(pageNum) {
   elements.btnNext.disabled = currentPage >= totalPages;
   updateStatusMeta();
   updateRecentPage(currentRecentId, currentPage);
+  if (viewMode === 'continuous' && continuousView?.mounted) {
+    // The column is already there: scrolling to the page renders it.
+    await continuousView.goToPage(currentPage);
+    sidebar.setActivePage(currentPage);
+    if (sidebar.open) sidebar.scrollActiveIntoView();
+    return;
+  }
   if (changed) {
     // Reset viewer scroll to top for the new page.
     elements.pdfViewer.scrollTop = 0;
     elements.pdfViewer.scrollLeft = 0;
   }
   await renderPage(currentPage);
+}
+
+/**
+ * Scroll one screen in the reading direction. At the end of the scrollable
+ * content — or when the page already fits — the gesture turns the page, like a
+ * normal reader. PageDown/PageUp, Space/Shift+Space and the single-page mouse
+ * wheel all go through here.
+ */
+function scrollStep(direction) {
+  if (!pdfDoc) return;
+  const viewer = elements.pdfViewer;
+  const max = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
+  const step = Math.max(40, viewer.clientHeight - 40);
+  if (direction > 0 && viewer.scrollTop >= max - 1) {
+    if (currentPage < totalPages) nextPage();
+    return;
+  }
+  if (direction < 0 && viewer.scrollTop <= 1) {
+    if (currentPage > 1) prevPage();
+    return;
+  }
+  viewer.scrollTop = Math.min(Math.max(0, viewer.scrollTop + direction * step), max);
+  if (viewMode === 'continuous') continuousView?.sync();
 }
 
 function prevPage() {
@@ -1083,6 +1414,43 @@ function rotateCCW() {
   setRotation(rotation - 90);
 }
 
+/**
+ * Re-measure fit-page / fit-width for the current container. Runs after a
+ * window resize and after the sidebar changes the available width, so the page
+ * keeps filling the view in both layout modes.
+ */
+async function refitAfterResize() {
+  if (!pdfDoc || !fitMode) return;
+  const doc = pdfDoc;
+  const generation = documentGeneration;
+  const page = currentPage;
+  const pageRotation = rotation;
+  const mode = fitMode;
+  let scale = await getBaseScale(mode, { doc, pageNum: page, pageRotation, generation });
+  if (scale === null && doc === pdfDoc && generation === documentGeneration && mode === fitMode) {
+    scale = await getBaseScale(mode, {
+      doc,
+      pageNum: currentPage,
+      pageRotation: rotation,
+      generation,
+    });
+  }
+  if (
+    doc !== pdfDoc || generation !== documentGeneration ||
+    pageRotation !== rotation || mode !== fitMode || scale === null
+  ) return;
+  currentScale = scale;
+  updateZoomDisplay();
+  await renderPage(currentPage);
+}
+
+/** Toggle the sidebar and re-fit: it changes the reading width. */
+async function toggleSidebar() {
+  if (!pdfDoc) return;
+  sidebar.toggle();
+  if (fitMode) await refitAfterResize();
+}
+
 // --- Full screen (Phase 2) ---
 
 async function toggleFullscreen() {
@@ -1123,6 +1491,30 @@ function refuseRestrictedCopy(event) {
 
 // --- Text selection (Phase 2) ---
 
+/** Keep search marks in step with the query on every rendered page. */
+function refreshSearchHighlights() {
+  if (!search) return;
+  if (viewMode === 'continuous' && continuousView?.mounted) {
+    for (const [page, slot] of continuousView.slots) {
+      if (search.query && search.hasMatches(page)) {
+        search.applyHighlights({ page, textLayerEl: slot.textLayer });
+      } else {
+        search.clearMarks(slot.textLayer);
+      }
+    }
+    return;
+  }
+  search.applyHighlights();
+}
+
+/** The text layer of the page on screen, in either layout mode. */
+function activeTextLayerEl() {
+  if (viewMode === 'continuous' && continuousView?.mounted) {
+    return continuousView.slots.get(currentPage)?.textLayer ?? null;
+  }
+  return elements.textLayer;
+}
+
 function selectPageText() {
   if (!pdfDoc) return;
   if (isBlocked(documentSecurity, 'copy')) {
@@ -1130,7 +1522,7 @@ function selectPageText() {
     setStatus(message);
     return;
   }
-  const layer = elements.textLayer;
+  const layer = activeTextLayerEl();
   if (!layer || !layer.textContent || !layer.textContent.trim()) {
     setStatus('No selectable text on this page (it may be a scanned image)');
     return;
@@ -1187,6 +1579,11 @@ function setupSearchEvents() {
     searchDebounce = setTimeout(() => {
       search.setQuery(elements.searchInput.value.trim());
     }, 250);
+  });
+
+  // Case-sensitive search: the whole document is recounted for the same query.
+  elements.searchMatchCase?.addEventListener('change', () => {
+    search.setMatchCase(elements.searchMatchCase.checked).catch(() => {});
   });
 
   elements.searchInput.addEventListener('keydown', (e) => {
@@ -1698,7 +2095,7 @@ function setupKeyboard() {
     if (key === 'F9') {
       if (pdfDoc && !isTypingTarget()) {
         e.preventDefault();
-        sidebar.toggle();
+        toggleSidebar().catch(() => {});
       }
       return;
     }
@@ -1745,6 +2142,13 @@ function setupKeyboard() {
       return;
     }
 
+    // Page layout: continuous scroll / single page.
+    if (mod && e.shiftKey && (key === 'M' || key === 'm')) {
+      e.preventDefault();
+      toggleViewMode();
+      return;
+    }
+
     if (mod && e.shiftKey && (key === 'S' || key === 's')) {
       e.preventDefault();
       saveAsRequested();
@@ -1772,11 +2176,15 @@ function setupKeyboard() {
     switch (key) {
       case 'PageUp':
         e.preventDefault();
-        prevPage();
+        scrollStep(-1);
         break;
       case 'PageDown':
         e.preventDefault();
-        nextPage();
+        scrollStep(1);
+        break;
+      case ' ':
+        e.preventDefault();
+        scrollStep(e.shiftKey ? -1 : 1);
         break;
       case 'ArrowLeft':
         if (pdfDoc) {
@@ -1866,9 +2274,14 @@ function setupEvents() {
   elements.btnErrorDismiss.addEventListener('click', hideError);
 
   // Phase 2 buttons
-  elements.btnSidebar.addEventListener('click', () => sidebar.toggle());
+  elements.btnSidebar.addEventListener('click', () => {
+    toggleSidebar().catch(() => {});
+  });
   elements.btnRotateCw.addEventListener('click', rotateCW);
   elements.btnRotateCcw.addEventListener('click', rotateCCW);
+  elements.btnViewMode?.addEventListener('click', () => {
+    toggleViewMode().catch(() => {});
+  });
   elements.btnFullscreen.addEventListener('click', toggleFullscreen);
   elements.btnHelp.addEventListener('click', () => toggleShortcuts(true));
   elements.btnWelcomeShortcuts.addEventListener('click', () => toggleShortcuts(true));
@@ -1918,7 +2331,11 @@ function setupEvents() {
     }
   });
 
-  // Mouse wheel zoom
+  // Mouse wheel: Ctrl/Cmd zooms. In single-page mode a wheel gesture at the end
+  // of the page turns it, so reading never needs the arrow buttons; in
+  // continuous mode the column scrolls natively.
+  let wheelIntent = 0;
+  let wheelTurnedAt = 0;
   elements.pdfViewer.addEventListener(
     'wheel',
     (e) => {
@@ -1926,7 +2343,24 @@ function setupEvents() {
         e.preventDefault();
         if (e.deltaY < 0) zoomIn();
         else zoomOut();
+        return;
       }
+      if (viewMode === 'continuous' || !pdfDoc) return;
+      const viewer = elements.pdfViewer;
+      const max = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
+      const atEnd = e.deltaY > 0 && viewer.scrollTop >= max - 1;
+      const atStart = e.deltaY < 0 && viewer.scrollTop <= 1;
+      if (!atEnd && !atStart) {
+        wheelIntent = 0;
+        return;
+      }
+      wheelIntent += Math.abs(e.deltaY);
+      const now = Date.now();
+      if (wheelIntent < 40 || now - wheelTurnedAt < 320) return;
+      wheelIntent = 0;
+      wheelTurnedAt = now;
+      if (atEnd) nextPage();
+      else prevPage();
     },
     { passive: false }
   );
@@ -1935,29 +2369,8 @@ function setupEvents() {
   let resizeTimeout;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(async () => {
-      if (!pdfDoc || !fitMode) return;
-      const doc = pdfDoc;
-      const generation = documentGeneration;
-      const page = currentPage;
-      const pageRotation = rotation;
-      const mode = fitMode;
-      let scale = await getBaseScale(mode, { doc, pageNum: page, pageRotation, generation });
-      if (scale === null && doc === pdfDoc && generation === documentGeneration && mode === fitMode) {
-        scale = await getBaseScale(mode, {
-          doc,
-          pageNum: currentPage,
-          pageRotation: rotation,
-          generation,
-        });
-      }
-      if (
-        doc !== pdfDoc || generation !== documentGeneration ||
-        pageRotation !== rotation || mode !== fitMode || scale === null
-      ) return;
-      currentScale = scale;
-      updateZoomDisplay();
-      await renderPage(currentPage);
+    resizeTimeout = setTimeout(() => {
+      refitAfterResize().catch(() => {});
     }, 150);
   });
 
@@ -1988,7 +2401,8 @@ function setupEvents() {
     if (api.onMenuRotateCW) api.onMenuRotateCW(() => rotateCW());
     if (api.onMenuRotateCCW) api.onMenuRotateCCW(() => rotateCCW());
     if (api.onMenuFullscreen) api.onMenuFullscreen(() => toggleFullscreen());
-    if (api.onMenuSidebar) api.onMenuSidebar(() => pdfDoc && sidebar.toggle());
+    if (api.onMenuSidebar) api.onMenuSidebar(() => pdfDoc && toggleSidebar().catch(() => {}));
+    if (api.onMenuViewMode) api.onMenuViewMode(() => toggleViewMode().catch(() => {}));
     if (api.onMenuShortcuts) api.onMenuShortcuts(() => toggleShortcuts(true));
     if (api.onMenuPageTools) api.onMenuPageTools(() => openPageTools());
     if (api.onMenuSaveAs) api.onMenuSaveAs(() => saveAsRequested());
@@ -2017,7 +2431,8 @@ export function initApp() {
     getDoc: () => pdfDoc,
     getCurrentPage: () => currentPage,
     goToPage: (n) => goToPage(n),
-    getTextLayerEl: () => elements.textLayer,
+    getTextLayerEl: () => activeTextLayerEl(),
+    onMarksChanged: () => refreshSearchHighlights(),
     onStatus: (msg) => setStatus(msg),
     onCount: (msg) => {
       elements.searchCount.textContent = msg;
@@ -2094,6 +2509,22 @@ export function initApp() {
     isCopyBlocked: () => isBlocked(documentSecurity, 'copy'),
     onStatus: (msg) => setStatus(msg),
   });
+
+  continuousView = new ContinuousView({
+    viewerEl: elements.pdfViewer,
+    columnEl: elements.pdfColumn,
+    deps: {
+      displaySize: (pageNum) => displayPageSize(pageNum),
+      measurePage: (pageNum) => measurePageSize(pageNum),
+      renderPage: (pageNum, slot, token) => renderSlotPage(pageNum, slot, token),
+      onCurrentPageChange: (pageNum) => handleContinuousPageChange(pageNum),
+      onStatus: (message) => setStatus(message),
+    },
+  });
+
+  viewMode = readStoredViewMode();
+  updateViewModeUi();
+  applyViewModeLayout();
 
   setupEvents();
   setupSearchEvents();

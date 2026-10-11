@@ -85,8 +85,16 @@ exercised on GitHub runners against the *packaged* app — see
 
 ### 📖 Reading & navigation
 
-- High-DPI PDF rendering with PDF.js (Mozilla's engine), one page at a time, with a
-  go-to-page box, prev/next, Home/End and status line (page, zoom, rotation, size).
+- High-DPI PDF rendering with PDF.js (Mozilla's engine), with a go-to-page box,
+  prev/next, Home/End and status line (page, zoom, rotation, size).
+- **Continuous scroll or one page at a time.** Continuous mode stacks every page in a
+  single scrolling column and keeps only the pages around the one you are reading in
+  memory; single-page mode shows one page filling the window. Switch with the toolbar
+  **Scroll/Page** button, **View → Continuous Scroll / Single Page** or `Ctrl+Shift+M` —
+  the choice is remembered between sessions.
+- Reading without reaching for the arrows: the mouse wheel or trackpad turns the page
+  when a page cannot scroll further, `Space`/`Shift+Space` scroll a screen and turn the
+  page at the end, and PageUp/PageDown do the same; `←`/`→` still change page directly.
 - Zoom in/out, fit page, fit width, rotation in 90° steps, full-screen mode, dark/light theme.
 - Sidebar with lazily rendered page thumbnails and a collapsible document outline (bookmarks).
 - Recent files with reopen-last-document.
@@ -99,8 +107,9 @@ exercised on GitHub runners against the *packaged* app — see
 ### 🔍 Search & text
 
 - Full-document search with on-page highlights and next/previous navigation that wraps
-  across pages. Case-insensitive, Unicode-normalized substring matching
-  (regex and whole-word search are not implemented).
+  across pages. Case-insensitive by default, with a case-sensitive **Aa** toggle;
+  Unicode-normalized substring matching (regex and whole-word search are not
+  implemented).
 - Mouse text selection, `Ctrl+A` on a page, and `Ctrl+C` copy through the PDF.js text layer.
 - **Hindi, Punjabi and 11 more languages:** rendering, search and clipboard copy are
   covered by a 13-language test matrix (English plus Devanagari, Gurmukhi, Bengali,
@@ -225,7 +234,7 @@ Requires Node 22 and npm (the Electron runtime downloads on first run):
 
 ```bash
 npm ci
-npm test            # full regression suite (~1,080 assertions, ~30 s)
+npm test            # full regression suite (~1,257 assertions, ~45 s)
 npm start           # desktop app
 npm run build:win   # or build:linux / build:mac — packaging details in DEVELOPMENT.md
 ```
@@ -244,7 +253,8 @@ Honest status of the current build — details and evidence in
 | Scanned PDFs | Render as images only. Selectable/searchable text requires the optional local Tesseract OCR (not bundled). |
 | Copy-restricted PDFs | If the document's permissions deny copying, Cambuz **honours it** app-wide (no selection, Ctrl+C, cut or drag-out; OCR disabled) and says so — while search still works. This is a Cambuz-side courtesy, **not DRM**: other software may ignore the same flags. |
 | Printing | Preview, job preparation and native duplex/collation option forwarding are tested; **physical printer output is untested**. Printer capabilities and per-printer non-printable margins are not queried (duplex may be unavailable; edge clipping possible with `None` margins). System dialogs/drivers may override settings. Filled form values do not appear in print — save the filled copy and print that. |
-| Search | Substring, case-insensitive, NFC-normalized; no regex, whole-word or diacritic-insensitive modes. |
+| Search | Substring, NFC-normalized, case-insensitive by default (case-sensitive toggle available); no regex, whole-word or diacritic-insensitive modes. |
+| Page layout | Continuous scrolling and single-page view are implemented and remembered; no two-page/facing spread, no page labels (roman numerals) and no presentation mode. In-document links and annotation marks from other applications are **not** displayed yet — navigate with the sidebar bookmarks. |
 | Forms | AcroForm basics only: XFA/dynamic forms, signature fields and JavaScript-driven fields are shown read-only, never guessed. |
 | Size & memory | The files linked above are **93–111 MiB** (Windows setup 97.3 MiB, Windows portable 96.9 MiB, AppImage 93.0 MiB, DMG 106.7 MiB, ZIP 111.4 MiB), down from 118–130 MiB after trimming unused Chromium locales, SwiftShader and app payload (the Cambuz payload is now 5.7 MiB); the rest is the Electron 44 runtime. See [installer size reduction](DEVELOPMENT.md#installer-size-reduction). Idle memory measured roughly 150–165 MiB across CI runs on the Windows runner. |
 | OS floors | Windows 10+ x64, macOS 13+ (arm64), modern x64 Linux. Electron 44 dropped Windows 7/8, 32-bit and macOS 12. |
@@ -333,6 +343,10 @@ npm ci && npm test    # regression suite (Node only; no display needed)
 npm start             # run from source (Electron)
 npm run serve         # browser preview of the renderer (development only)
 ```
+
+The reading feature set was audited against mainstream readers — what exists, what is
+missing and in what order it is worth closing:
+[feature audit](docs/FEATURE-AUDIT.md).
 
 Contributions are welcome — please open an issue first for anything beyond a small fix,
 and keep changes covered by `npm test`. No new release or signing automation is produced

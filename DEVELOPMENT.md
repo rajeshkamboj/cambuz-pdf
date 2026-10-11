@@ -7,7 +7,10 @@
 > The content below was moved verbatim on 2026-10-10; where a statement was later
 > superseded, the Phase 10 section marks it.
 
-**Current state (verified 2026-10-10).** All ten development phases are complete.
+**Current state (verified 2026-10-10; Phase 11 added later on branch
+`arena/887f6050-cambuz-pdf` and is not part of that verification).** All ten
+development phases are complete; Phase 11 (continuous scroll and reader
+navigation, above) is the newest work.
 The Phase 10 release candidate `ac2b848` has since been merged into `main` (PR #11,
 merge commit `a0a95b2`); the "not merged into main" notes inside the Phase 9 and
 Phase 10 reports describe the state at their time of writing. **No GitHub Release
@@ -16,6 +19,56 @@ physical printing remain open (see
 [`docs/WINDOWS-ACCEPTANCE-CHECKLIST.md`](docs/WINDOWS-ACCEPTANCE-CHECKLIST.md)).
 Current distributions are CI build artifacts linked from the
 [README download section](README.md#-download-cambuz).
+
+---
+
+## Phase 11 — Continuous scroll, reader navigation and a reading-feature audit
+
+### Phase 11 Status: `IMPLEMENTED — HEADLESS VERIFIED, HUMAN PASS PENDING`
+
+Branch `arena/887f6050-cambuz-pdf`. Single-page rendering and every existing
+feature are preserved; the change adds the one standard reading mode the viewer
+never had, plus the navigation around it.
+
+| Requirement | Implementation |
+|---|---|
+| Continuous vertical scroll | ✅ `src/continuous-layout.js` (DOM-free geometry) + `src/continuous-view.js` (slots, render window, release) drive a `#pdf-column` of absolutely positioned page slots |
+| Lazy rendering in a long document | ✅ Only pages intersecting the viewport (±1) hold a slot; canvases outside the window are released (backing store zeroed) and re-rendered on return |
+| Page sizes known before a page is rendered | ✅ One `getPage` per page caches the unrotated size; unmeasured pages borrow the median measured height, and the background measurement pass replaces estimates nearest-the-reader first |
+| Correct scroll height and no scroll jumps | ✅ Column height follows the geometry; measuring a page above the reading line re-anchors `scrollTop` by the height delta |
+| Zoom / fit / rotation in continuous mode | ✅ `relayout()` rebuilds the geometry from the cached base sizes and keeps the reader on the same page (and the same offset into it) |
+| UI follows the scroll position | ✅ Toolbar page box, prev/next state, status line, sidebar active thumbnail, recents last-page and form overlay all follow the page under the reading line |
+| Search in continuous mode | ✅ Highlights apply per rendered slot; `SearchController.applyHighlights({ page, textLayerEl })` and `clearMarks(el)` are now addressable, and a new optional `onMarksChanged` dep keeps every live slot in step with the query |
+| Copy permission in continuous mode | ✅ `no-copy` is applied to every column text layer, including slots created later |
+| Layout choice | ✅ Toolbar **Scroll/Page** button, **View → Continuous Scroll / Single Page** (`Ctrl+Shift+M`), persisted in `localStorage` as `cambuz.viewMode` |
+| Wheel / Space / PageUp-Down reading | ✅ `scrollStep()` scrolls a screen and turns the page at the end; single-page wheel gestures turn pages with a 320 ms / 40 px throttle |
+| Case-sensitive search | ✅ The engine already supported `matchCase`; the search bar now exposes it (`setMatchCase()` re-runs the query) |
+| Sidebar re-fit | ✅ Opening/closing the sidebar re-measures fit-page/fit-width in both modes |
+| Tests | ✅ `scripts/test-phase11.mjs` — 110 assertions (geometry, view behaviour with a fake renderer, the real app in jsdom, case-sensitive search); wired into `npm test` |
+
+**Default layout: single page.** Continuous mode is opt-in and remembered. The
+packaged smoke test and the earlier jsdom suites therefore keep asserting the
+same single-page behaviour they always did. Flipping the default is a one-line
+change: `DEFAULT_VIEW_MODE = 'continuous'` in `src/renderer.js`.
+
+**Evidence.** `npm test` passes with 1,257 assertions on this branch (Phase 11
+adds 110). The sandbox has no Electron runtime and no display, so continuous
+mode was verified headlessly (geometry tests, `ContinuousView` against a fake
+renderer, and the real renderer in jsdom: switch modes on the ten-page sample,
+jump to a page, scroll across a page boundary, watch the page box and status
+line follow, switch back) — **no human has scrolled it in the packaged app
+yet**. Re-run the packaged smoke test on Windows/Linux and do a manual scroll,
+zoom and rotation pass before release.
+
+**Superseded statements.** The two "continuous scroll still future / not yet
+implemented" lines in the Phase 3 known-limitations list and the Phase 1 record
+below describe their phase; Phase 11 implements continuous scroll.
+
+**Feature audit.** The reading feature set was compared against mainstream
+readers in [`docs/FEATURE-AUDIT.md`](docs/FEATURE-AUDIT.md): what is present,
+what is missing (in-document link annotations, annotation display, Open Recent
+while reading, night page colours, zoom presets, page labels, spreads, …) and a
+suggested order for the next three tickets.
 
 ---
 
@@ -1794,7 +1847,9 @@ compatibility matrix and `npm run test:phase6` results above.
   has its own verified Unicode map and covers conjunct/combining cases; use it
   rather than the legacy PDFs as Phase 6 search/copy evidence.
 - **Single page view**: one page at a time (continuous scroll still future)
+  — *superseded: Phase 11 added a continuous scroll mode; see the Phase 11 section*
 - **No continuous scroll / no annotation authoring**: single page view; page operations and form filling are Phases 4–5 and are implemented
+  — *continuous scroll is superseded by Phase 11; annotation authoring is still absent*
 - **Recent-file cache**: web-mode byte cache capped at 5 files × 60 MiB;
   larger/older files must be reopened manually
 - **Search**: case-insensitive substring search; no regex, no whole-word or
@@ -2038,6 +2093,7 @@ Cambuz PDF Reader
 
 - **Electron binary**: Cannot be installed in all environments; web preview mode works everywhere
 - **Single page view**: Currently renders one page at a time (continuous scroll not yet implemented)
+  — *superseded at this milestone: Phase 11 added continuous scroll (single page remains the default)*
 - **No text selection**: Phase 1 renders to canvas only; text selection/copy comes in Phase 2
 - **No search**: Text search is a Phase 2 feature
 - **No thumbnails**: Page thumbnails are a Phase 2 feature

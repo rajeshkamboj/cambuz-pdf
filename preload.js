@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('cambuzAPI', {
   onMenuRotateCCW: (callback) => ipcRenderer.on('menu-rotate-ccw', callback),
   onMenuFullscreen: (callback) => ipcRenderer.on('menu-fullscreen', callback),
   onMenuSidebar: (callback) => ipcRenderer.on('menu-sidebar', callback),
+  onMenuViewMode: (callback) => ipcRenderer.on('menu-view-mode', callback),
   onMenuShortcuts: (callback) => ipcRenderer.on('menu-shortcuts', callback),
   // Phase 4: page tools, Save As / Duplicate and merge/split file access.
   openPdfPaths: () => ipcRenderer.invoke('dialog-open-pdfs'),

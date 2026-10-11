@@ -42,6 +42,11 @@ from commit `ac2b848` (or the commit named in the release notes). Check SHA-256 
 | 29 | On a duplex-capable printer, print a multi-sheet document one-sided, then long-edge and short-edge duplex; verify page order and flip direction (also try 2-up and landscape). Test both a named printer and the system dialog; record any driver overrides. | | |
 | 30 | Print two copies collated and uncollated; verify physical output order. On a simplex-only printer, verify that requesting duplex does not silently promise two-sided output. | | |
 | 31 | Confirm the transparent icon appears on the installer, installed/portable exe, Start Menu, taskbar, About dialog and the native print window; inspect small icon sizes on both light and dark backgrounds. | | |
+| 32 | Continuous scroll: open a long document, click the toolbar **Page/Scroll** button (or `Ctrl+Shift+M`) and scroll through several pages — the pages stack without gaps or jumps, the page box and status line follow the scroll, and each page appears as it enters the window. | | |
+| 33 | Continuous scroll, zoom and rotation: zoom in and out and rotate while scrolling; the reader stays on the same page, and reading returns to the same place. | | |
+| 34 | Continuous scroll, search: search for a word, use next/previous across pages, then scroll away and back — highlights stay on the right pages. | | |
+| 35 | Continuous scroll is remembered: close and reopen the app; it starts in the layout you left it in. Switch back to single page with the same button. | | |
+| 36 | Reading with the wheel: in single-page mode, scroll past the bottom of a page — it turns once per gesture (no page skipping); `Space`/`PageDown` scroll then turn at the end. | | |
 
 **Not part of this checklist:** macOS and Linux. Those builds are experimental and need their own
 testing on real hardware before they can be called supported.
