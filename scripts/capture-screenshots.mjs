@@ -278,12 +278,33 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class CambuzWin {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int X, int Y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextLength(IntPtr hWnd);
+  // Top-level visible window that belongs to the given process. More reliable
+  // than Process.MainWindowHandle, which is cached and can go stale.
+  public static IntPtr FindWindowForProcess(uint wanted) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+      uint processId;
+      GetWindowThreadProcessId(hWnd, out processId);
+      if (processId == wanted && IsWindowVisible(hWnd) && GetWindowTextLength(hWnd) > 0) {
+        found = hWnd;
+        return false;
+      }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)] public struct DEVMODE {
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
     public short dmSpecVersion; public short dmDriverVersion; public short dmSize; public short dmDriverExtra;
@@ -298,74 +319,91 @@ public class CambuzWin {
   }
   [DllImport("user32.dll", CharSet = CharSet.Ansi)] public static extern int EnumDisplaySettings(string device, int mode, ref DEVMODE dm);
   [DllImport("user32.dll", CharSet = CharSet.Ansi)] public static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
-  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 }
 "@
 [void][CambuzWin]::SetProcessDPIAware()
 
 $result = [ordered]@{}
 try {
+  # Some runners come up at 1024x768; ask the display for something big enough
+  # to hold a 1440x900 window plus the taskbar. Not every session allows it,
+  # and the numbers are reported either way.
   $mode = New-Object CambuzWin+DEVMODE
   $mode.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mode)
-  if ([CambuzWin]::EnumDisplaySettings($null, -1, [ref]$mode) -ne 0) {
-    $result.currentResolution = "$($mode.dmPelsWidth)x$($mode.dmPelsHeight)"
-    if ($mode.dmPelsWidth -lt 1920 -or $mode.dmPelsHeight -lt 1080) {
-      $target = New-Object CambuzWin+DEVMODE
-      $target.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($target)
-      if ([CambuzWin]::EnumDisplaySettings($null, -1, [ref]$target) -ne 0) {
-        $target.dmPelsWidth = 1920
-        $target.dmPelsHeight = 1080
-        $target.dmFields = 0x00080000 -bor 0x00100000
-        $applied = [CambuzWin]::ChangeDisplaySettings([ref]$target, 1)
-        $result.resolutionChange = $applied
-        Start-Sleep -Milliseconds 800
-      }
-    }
+  $enumOk = [CambuzWin]::EnumDisplaySettings($null, -1, [ref]$mode)
+  $result.enumDisplaySettings = $enumOk
+  $result.currentResolution = if ($enumOk -ne 0) { "$($mode.dmPelsWidth)x$($mode.dmPelsHeight)" } else { $null }
+  if ($enumOk -ne 0 -and ($mode.dmPelsWidth -lt 1920 -or $mode.dmPelsHeight -lt 1080)) {
+    $target = New-Object CambuzWin+DEVMODE
+    $target.dmSize = [System.Runtime.InteropServices.Marshal]::SizeOf($target)
+    [void][CambuzWin]::EnumDisplaySettings($null, -1, [ref]$target)
+    $target.dmPelsWidth = 1920
+    $target.dmPelsHeight = 1080
+    $target.dmFields = 0x00080000 -bor 0x00100000
+    $result.resolutionChange = [CambuzWin]::ChangeDisplaySettings([ref]$target, 0)
+    Start-Sleep -Milliseconds 1500
   }
   $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
   $result.screen = @($screen.X, $screen.Y, $screen.Width, $screen.Height)
 
-  $process = Get-Process -Id $env:CAMBUZ_SHOT_PID
+  # The window: enumerated fresh every call, so a stale handle can never be
+  # mistaken for the app.
+  $targetPid = [uint32]$env:CAMBUZ_SHOT_PID
   $handle = [IntPtr]::Zero
-  for ($i = 0; $i -lt 80; $i++) {
-    $process.Refresh()
-    $handle = $process.MainWindowHandle
+  for ($i = 0; $i -lt 120; $i++) {
+    $handle = [CambuzWin]::FindWindowForProcess($targetPid)
     if ($handle -ne [IntPtr]::Zero) { break }
     Start-Sleep -Milliseconds 250
   }
-  if ($handle -eq [IntPtr]::Zero) { throw 'The application window handle was not available' }
+  $result.windowFound = ($handle -ne [IntPtr]::Zero)
+  if (-not $result.windowFound) { throw "No visible window found for process id $targetPid" }
+
   $targetWidth = [int]$env:CAMBUZ_SHOT_WIDTH
   $targetHeight = [int]$env:CAMBUZ_SHOT_HEIGHT
-  $x = [int]($screen.X + 40)
-  $y = [int]($screen.Y + 20)
+  $x = [int]($screen.X + 24)
+  $y = [int]($screen.Y + 24)
   [void][CambuzWin]::ShowWindow($handle, 9)
   [void][CambuzWin]::SetWindowPos($handle, [IntPtr]::Zero, $x, $y, $targetWidth, $targetHeight, 0x0004 -bor 0x0040)
   [void][CambuzWin]::SetForegroundWindow($handle)
-  Start-Sleep -Milliseconds 1200
+  Start-Sleep -Milliseconds 1500
 
   $rect = New-Object CambuzWin+RECT
-  [void][CambuzWin]::GetWindowRect($handle, [ref]$rect)
+  $rectOk = [CambuzWin]::GetWindowRect($handle, [ref]$rect)
+  $result.getWindowRect = $rectOk
+  if (-not $rectOk) { throw 'GetWindowRect failed for the application window' }
   $result.window = @($rect.Left, $rect.Top, ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top))
+  $windowWidth = $result.window[2]
+  $windowHeight = $result.window[3]
+
+  # A 16:10 crop that contains the whole window, keeps the title bar just
+  # inside the top edge and lines its bottom edge up with the screen so part of
+  # the taskbar is in frame. If the screen is too small for that, say so.
+  $margin = 8
+  $cropHeight = [int][math]::Max(($screen.Y + $screen.Height) - $result.window[1], [int][math]::Round(($windowWidth + 2 * $margin) * 10 / 16))
+  $cropWidth = [int][math]::Round($cropHeight * 16 / 10)
+  if ($cropWidth -gt $screen.Width) {
+    $cropWidth = $screen.Width
+    $cropHeight = [int][math]::Round($cropWidth * 10 / 16)
+  }
+  if ($cropHeight -gt $screen.Height) {
+    $cropHeight = $screen.Height
+    $cropWidth = [int][math]::Round($cropHeight * 16 / 10)
+  }
+  # Keep the window's top edge just inside the crop.
+  $cropY = [int]($screen.Y + $screen.Height - $cropHeight)
+  if ($cropY -gt $result.window[1] - $margin) { $cropY = $result.window[1] - $margin }
+  $cropY = [math]::Max($screen.Y, [math]::Min($cropY, $screen.Y + $screen.Height - $cropHeight))
+  $cropX = [int]($result.window[0] + $windowWidth / 2 - $cropWidth / 2)
+  $cropX = [math]::Max($screen.X, [math]::Min($cropX, $screen.X + $screen.Width - $cropWidth))
+  $result.crop = @($cropX, $cropY, $cropWidth, $cropHeight)
+  $result.cropCoversWindow = ($cropX -le $result.window[0]) -and (($cropX + $cropWidth) -ge ($result.window[0] + $windowWidth)) -and ($cropY -le $result.window[1]) -and (($cropY + $cropHeight) -ge ($result.window[1] + $windowHeight))
+  $result.cropIsSixteenByTen = ([math]::Abs($cropWidth * 10 - $cropHeight * 16) -le 2)
+  $result.taskbarInFrame = (($cropY + $cropHeight) -ge ($screen.Y + $screen.Height - 8))
 
   $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
   $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
   $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $bitmap.Size)
   $graphics.Dispose()
-
-  # 16:10 crop centred on the application window, clamped to the screen.
-  $cropWidth = [int][math]::Min($screen.Width, $result.window[2] + 120)
-  $cropHeight = [int][math]::Round($cropWidth * 10 / 16)
-  if ($cropHeight -lt ($result.window[3] + 60)) {
-    $cropHeight = [int][math]::Min($screen.Height, $result.window[3] + 60)
-    $cropWidth = [int][math]::Min($screen.Width, [int][math]::Round($cropHeight * 16 / 10))
-  }
-  if ($cropHeight -gt $screen.Height) { $cropHeight = $screen.Height }
-  if ($cropWidth -gt $screen.Width) { $cropWidth = $screen.Width }
-  $cropX = [int]($result.window[0] + $result.window[2] / 2 - $cropWidth / 2)
-  $cropY = [int]($result.window[1] + $result.window[3] / 2 - $cropHeight / 2)
-  $cropX = [math]::Max($screen.X, [math]::Min($cropX, $screen.X + $screen.Width - $cropWidth))
-  $cropY = [math]::Max($screen.Y, [math]::Min($cropY, $screen.Y + $screen.Height - $cropHeight))
-  $result.crop = @($cropX, $cropY, $cropWidth, $cropHeight)
 
   $crop = $bitmap.Clone((New-Object System.Drawing.Rectangle($cropX, $cropY, $cropWidth, $cropHeight)), $bitmap.PixelFormat)
   $sum = 0.0
@@ -379,7 +417,6 @@ try {
     }
   }
   $result.meanLuma = [math]::Round($sum / [math]::Max(1, $count), 2)
-  $result.distinctSampleColours = ($crop.Width * $crop.Height)
   $crop.Save($env:CAMBUZ_SHOT_FILE, [System.Drawing.Imaging.ImageFormat]::Png)
   $bitmap.Save($env:CAMBUZ_SHOT_FULL, [System.Drawing.Imaging.ImageFormat]::Png)
   $crop.Dispose()
@@ -1305,28 +1342,48 @@ async function main() {
             await settle(`${entry.name} (native window)`, (snapshot) => Boolean(snapshot.canvas && snapshot.canvas.ink > 0), 30000);
             await sleep(1200);
             const result = captureDesktop({ file: `${entry.name}.png`, pid: child ? child.pid : null, outDir });
-            if (result.ok && result.detail.meanLuma > 12) {
+            const problems = [];
+            if (!result.ok) {
+              problems.push(result.error);
+            } else {
+              const d = result.detail;
+              // The screen has to be big enough for the window plus the taskbar,
+              // the 16:10 crop has to contain the whole window, and the frame
+              // has to be lit. Anything less is reported, never shipped.
+              if (d.screen[2] < 1280 || d.screen[3] < 800) problems.push(`the runner desktop is only ${d.screen[2]}×${d.screen[3]}`);
+              if (!d.windowFound || d.window[2] < 1200 || d.window[3] < 700) problems.push(`the app window measures ${d.window[2]}×${d.window[3]}`);
+              if (!d.cropCoversWindow) problems.push(`a 16:10 crop of ${d.crop[2]}×${d.crop[3]} cannot contain the window`);
+              if (!d.cropIsSixteenByTen) problems.push(`the crop ${d.crop[2]}×${d.crop[3]} is not 16:10`);
+              if (!(d.meanLuma > 12)) problems.push(`the captured frame is black (mean luma ${d.meanLuma})`);
+            }
+            if (problems.length === 0) {
+              const d = result.detail;
               report.desktop.push({
                 file: `${entry.name}.png`,
                 state: entry.state,
                 sample: DEMO_SAMPLE,
                 theme: 'dark',
                 method: 'desktop-screen',
-                width: result.detail.crop[2],
-                height: result.detail.crop[3],
+                width: d.crop[2],
+                height: d.crop[3],
                 bytes: fs.statSync(path.join(outDir, `${entry.name}.png`)).size,
                 appState: {
-                  screen: result.detail.screen.join('×'),
-                  window: result.detail.window.join(','),
-                  crop: result.detail.crop.join(','),
-                  meanLuma: result.detail.meanLuma,
-                  resolutionChange: result.detail.resolutionChange ?? null,
+                  screen: d.screen.join('×'),
+                  window: d.window.join(','),
+                  crop: d.crop.join(','),
+                  meanLuma: d.meanLuma,
+                  taskbarInFrame: d.taskbarInFrame,
+                  resolutionChange: d.resolutionChange ?? null,
                 },
                 checks: ['captured from the runner screen with the native title bar and part of the taskbar'],
               });
-              record(`${entry.name}: desktop capture shows a lit screen`, true, `mean luma ${result.detail.meanLuma}, window ${result.detail.window.join(',')}, crop ${result.detail.crop.join(',')} of a ${result.detail.screen.join('×')} screen`);
+              record(
+                `${entry.name}: desktop capture shows the real window on a lit desktop`,
+                true,
+                `mean luma ${d.meanLuma}, window ${d.window.join(',')}, crop ${d.crop.join(',')} of a ${d.screen.join('×')} screen, taskbar in frame: ${d.taskbarInFrame}`,
+              );
             } else {
-              const reason = result.ok ? `the captured frame is black (mean luma ${result.detail.meanLuma})` : result.error;
+              const reason = problems.join('; ');
               warn(`${entry.name}: desktop capture unusable — ${reason}`);
               report.manualCaptureNeeded.push(`${entry.name} (desktop capture on this runner: ${reason})`);
             }
@@ -1344,9 +1401,22 @@ async function main() {
     record('every requested screenshot was captured', Boolean(only) || shots.length === 10 || report.error !== undefined, `${shots.length} content shot(s)`);
     report.finishedAt = new Date().toISOString();
     report.passed = report.checks.every((check) => check.pass);
+    if (report.manualCaptureNeeded.length) {
+      report.manualCaptureInstructions = [
+        'The desktop shots (feature-desktop-windows, windows-reading-view, offline-local-file) need a Windows PC with a 1920×1080 or larger display:',
+        '1. Copy the built app to the PC, or install it with the NSIS installer from the cambuz-pdf-windows-x64 artifact of the Desktop builds workflow.',
+        '2. Set the display to 1920×1080 or larger, close everything else, and let the taskbar show (no autohide).',
+        '3. Open samples/cambuz-demo.pdf in Cambuz PDF Reader, click Fit width, and turn the thumbnails sidebar on (F9).',
+        '4. Move the window to 24,24 and size it to 1440×900 (Windows key + arrow keys, or drag the corner).',
+        '5. Press Windows+Shift+S, choose the full-screen snip, save it as feature-desktop-windows.png, then open it and crop it to 16:10 (2048×1280 max) with any image editor — crop only, no retouching.',
+        '6. Click the second thumbnail to read page 2 and snip the same way for windows-reading-view.png.',
+        '7. Copy samples/cambuz-demo.pdf to a folder with no personal name in the path (for example C:\\tmp), open it from that folder in the same window, keep Fit page on, and snip again for offline-local-file.png.',
+      ];
+    }
     fs.writeFileSync(path.join(outDir, 'capture-report.json'), `${JSON.stringify(report, null, 2)}\n`);
     if (report.manualCaptureNeeded.length) {
       log(`manual capture still needed: ${report.manualCaptureNeeded.join('; ')}`);
+      for (const line of report.manualCaptureInstructions) log(`  ${line}`);
     }
     try { ws?.close(); } catch { /* already closed */ }
     stopApp();
@@ -1366,7 +1436,7 @@ async function main() {
       '| --- | --- | --- | --- |',
       ...report.shots.map((entry) => `| \`${entry.file}\` | ${escapeCell(entry.state)} | ${entry.checks.every((check) => check.pass) ? 'PASS' : 'FAIL'} | ${escapeCell(entry.appState.page ? `page ${entry.appState.page}/${entry.appState.total}, zoom ${entry.appState.zoom}` : '')} |`),
       '',
-      ...(report.manualCaptureNeeded.length ? [`Manual capture needed: ${report.manualCaptureNeeded.join('; ')}`, ''] : []),
+      ...(report.manualCaptureNeeded.length ? [`Manual capture needed: ${report.manualCaptureNeeded.join('; ')}`, '', ...report.manualCaptureInstructions.map((line) => `- ${line}`), ''] : []),
     ];
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
   }
