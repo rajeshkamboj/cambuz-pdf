@@ -1,34 +1,45 @@
 # Cambuz PDF Reader 1.1.0 — Windows pre-release
 
-> **Unsigned pre-release. Not published.** Windows is the primary target. Linux and macOS
+> **Unsigned pre-release, published as
+> [`v1.1.0-rc1`](https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1).**
+> Windows is the primary target. Linux and macOS
 > builds are **experimental**: they build and pass headless checks, but they have not yet
 > been launched on a real desktop. Please read the limitations before you install.
+> The `-rc1` suffix stays until a person completes the manual acceptance pass on real
+> hardware; the installers themselves are final unless that pass finds a problem.
 
-**Release candidate commit:** `ac2b848` on branch `arena/e73ef198-cambuz-pdf`
-(CI: [Desktop builds run 38032232208](https://github.com/pixldotcom/cambuz-pdf/actions/runs/38032232208)).
-Release docs were added in a later docs-only commit; they do not change the application.
-The official Cambuz icon and the updated About dialog were finalized after this release
-candidate; installers built by later CI runs include them.
+**Original release candidate:** commit `ac2b848` (CI: Desktop builds run 38032232208).
+The published files come from commit `7dcf557` and
+[CI run 38156402210](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38156402210),
+which include the installer size reduction, the official Cambuz branding and the updated
+About dialog. Documentation-only commits since then do not change the application.
 
 Application identity: name **Cambuz PDF Reader**, app ID **`com.cambuz.pdfreader`**,
 publisher **Cambuz**, licence **MIT**.
 
 ## Downloads (Windows x64)
 
+Both Windows files, the Linux AppImage and the macOS DMG/ZIP are attached to the published
+pre-release: **[Cambuz PDF Reader v1.1.0-rc1](https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1)**.
+
 | File | Use | SHA-256 |
 | --- | --- | --- |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` | Installer (per-user, choose folder, Start Menu entry, `.pdf` association) | `7bd699b57cefc7cb76d46c239db89e02a4a3641fb4b6aa12ab49654b56c0e343` |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | Single file, no installation | `3c100ecd868cc7711d8c4370f16de7c1d3d7ed20ee2f594db9880ba1b37ab45b` |
+| [`Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe`](https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe) | Installer (per-user, choose folder, Start Menu entry, `.pdf` association) | `9d39c28aa53ccc84f407e113df97c3c732c2def542c53629a43d8385f55ba365` |
+| [`Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe`](https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe) | Single file, no installation | `30b5532358dd7870796477bf6296c614bbb3cd53868e44755d392e998be9a27a` |
 
-Verify a download against `SHA256SUMS.txt` in the same CI artifact (`cambuz-pdf-windows-x64`).
-Run `Get-FileHash -Algorithm SHA256 <file>` in PowerShell to compute it.
+Verify a download against
+[`SHA256SUMS.txt`](https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/SHA256SUMS.txt)
+from the same release (it lists all five files). Run `Get-FileHash -Algorithm SHA256 <file>`
+in PowerShell to compute yours.
 
 **Windows will warn you.** The builds are not code-signed. SmartScreen may show
 "Windows protected your PC". Choose **More info → Run anyway** only if the checksum matches.
 
 Experimental (not recommended for general use yet): Linux x64 AppImage
 (`Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage`) and macOS arm64 DMG/ZIP
-(`Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg`, `.zip`). The macOS build is unsigned and not notarized.
+(`Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg`, `.zip`) — both on the
+[same release page](https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1).
+The macOS build is unsigned and not notarized.
 Gatekeeper will block it until you approve it manually.
 
 ## What this release contains

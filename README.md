@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml"><img src="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml/badge.svg?branch=main" alt="Desktop builds status (main)" /></a>
+  <a href="https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1"><img src="https://img.shields.io/badge/download-v1.1.0--rc1-success" alt="Download v1.1.0-rc1" /></a>
   <img src="https://img.shields.io/badge/version-1.1.0--pre--release-informational" alt="Version 1.1.0 pre-release" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Windows%20x64-primary-0078D6" alt="Windows x64 (primary target)" />
@@ -29,47 +30,46 @@
 
 ## ⬇️ Download Cambuz
 
-> **How downloads work right now:** version **1.1.0** is a **pre-release candidate**.
-> **No GitHub Release has been published yet**, so the installers below come from a
-> successful **GitHub Actions run** — they are *CI build artifacts*. Downloading them
-> requires a signed-in GitHub account, and artifacts are retained for **30 days**
-> (this set expires around **9 November 2026**). Once manual acceptance passes, these
-> will move to a tagged GitHub Release with permanent download links.
+> **How downloads work right now:** version **1.1.0** is published as the
+> **[v1.1.0-rc1 pre-release][release-page]**, so the links below are permanent
+> release-asset links — no GitHub account needed and no 30-day CI expiry.
+> The builds are **unsigned**: expect SmartScreen and Gatekeeper warnings.
+> The `-rc1` suffix means a person has not yet run the manual acceptance pass on real
+> hardware; when that passes, the same files are promoted to a full release.
 
-Every file is built from commit `fe73e6f` (installer size reduction, on top of the official
-Cambuz branding and the updated About dialog) in
-[CI run 38066446109](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38066446109)
-(all four jobs green). Artifacts are **unsigned** builds — expect SmartScreen/Gatekeeper notices.
+Every file is built from commit `7dcf557` in
+[CI run 38156402210](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38156402210)
+(all five jobs green) and attached to the [v1.1.0-rc1 pre-release][release-page].
 
-| Platform & architecture | Artifact | Best for | Size | Download |
+| Platform & architecture | File | Best for | Size | Download |
 | --- | --- | --- | ---: | --- |
-| **Windows 10/11 · x64** *(recommended)* | `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` — NSIS installer | Normal install: pick a folder, Start Menu entry, optional `.pdf` association. Per-user, no admin rights. | 97.3 MiB | [Windows CI artifact][win-dl] (contains installer, portable and `SHA256SUMS.txt`) |
-| Windows 10/11 · x64 | `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | No install at all — run from Desktop, Downloads or a USB stick (it extracts itself at launch) | 96.9 MiB | [Windows CI artifact][win-dl] |
-| Linux x64 *(experimental)* | `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | Try Cambuz on Linux; single-file AppImage | 93.0 MiB | [Linux CI artifact][linux-dl] |
-| macOS 13+ · Apple Silicon *(experimental)* | `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | Drag-to-Applications disk image; unsigned and not notarized | 106.7 MiB | [macOS CI artifact][mac-dl] |
-| macOS 13+ · Apple Silicon *(experimental)* | `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | Same app bundle as a plain ZIP | 111.4 MiB | [macOS CI artifact][mac-dl] |
+| **Windows 10/11 · x64** *(recommended)* | `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` — NSIS installer | Normal install: pick a folder, Start Menu entry, optional `.pdf` association. Per-user, no admin rights. | 97.3 MiB | **[Download installer][win-setup-dl]** |
+| Windows 10/11 · x64 | `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | No install at all — run from Desktop, Downloads or a USB stick (it extracts itself at launch) | 96.9 MiB | **[Download portable][win-portable-dl]** |
+| Linux x64 *(experimental)* | `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | Try Cambuz on Linux; single-file AppImage | 93.0 MiB | **[Download AppImage][linux-dl]** |
+| macOS 13+ · Apple Silicon *(experimental)* | `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | Drag-to-Applications disk image; unsigned and not notarized | 106.7 MiB | **[Download DMG][mac-dmg-dl]** |
+| macOS 13+ · Apple Silicon *(experimental)* | `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | Same app bundle as a plain ZIP | 111.4 MiB | **[Download ZIP][mac-zip-dl]** |
 | Windows arm64, Intel Mac, Linux arm64 | — | Not built | — | *unavailable* |
 
-Newer or expired links? Every push to `main` that changes application or packaging
-files rebuilds all three platforms (documentation-only commits are skipped):
-find the latest green run on the
-[Desktop builds workflow page](https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml).
+All five files, plus [`SHA256SUMS.txt`][sums-dl], are listed on the
+[v1.1.0-rc1 pre-release page][release-page]. Want a build of a newer commit? The
+[Desktop builds workflow](https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml)
+uploads the same files as CI artifacts on every push to `main` (those need a signed-in
+GitHub account and expire after 30 days; the release links above do not).
 
 <details>
-<summary><strong>SHA-256 checksums for this build</strong> (published by the CI run itself)</summary>
+<summary><strong>SHA-256 checksums for the v1.1.0-rc1 files</strong> (published as <code>SHA256SUMS.txt</code> on the release)</summary>
 
 | File | SHA-256 |
 | --- | --- |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` | *pending: copy from `SHA256SUMS.txt` in run 38066446109* |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | *pending: copy from `SHA256SUMS.txt` in run 38066446109* |
-| `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | *pending: copy from `SHA256SUMS.txt` in run 38066446109* |
-| `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | *pending: copy from `SHA256SUMS.txt` in run 38066446109* |
-| `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | *pending: copy from `SHA256SUMS.txt` in run 38066446109* |
+| `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` | `9d39c28aa53ccc84f407e113df97c3c732c2def542c53629a43d8385f55ba365` |
+| `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | `30b5532358dd7870796477bf6296c614bbb3cd53868e44755d392e998be9a27a` |
+| `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | `21e1b03ca255e506b28f4fec226e7007c1b4a4190adcf99dfad3534d3caa426f` |
+| `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | `df3cc4424b7b20611b421d549e4cb1f7d9a22f53e4d3da24416d551a76fdcdbb` |
+| `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | `a11f78dd966d7579ba2b53d31e214affbf8883fdf1f8d3fdca26c0b3b2988512` |
 
 Verify after download: `Get-FileHash -Algorithm SHA256 <file>` (PowerShell) or
-`sha256sum -c SHA256SUMS.txt` (Linux/macOS, inside the artifact folder).
-Digests are only reproducible within the run that produced them — always compare against
-the `SHA256SUMS.txt` that ships inside the same artifact.
+`sha256sum -c SHA256SUMS.txt` (Linux/macOS, next to the downloaded files). The builds are
+unsigned, so the checksum is how you confirm a file is the one CI produced.
 
 </details>
 
@@ -184,7 +184,7 @@ PDFs in [`samples/`](samples) let you judge the rendering with your own copy of 
 
 ### Windows (recommended: installer)
 
-1. From the [Windows CI artifact][win-dl], unzip and keep `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe`.
+1. [Download the installer][win-setup-dl] (`Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe`).
    Check its SHA-256 against the table above.
 2. Run it. **SmartScreen will show "Windows protected your PC"** because the build is
    unsigned — choose **More info → Run anyway** (only after the checksum matches).
@@ -198,6 +198,8 @@ by CI on real packaged builds; the interactive wizard pages still await the
 
 ### Linux x64 (experimental — built and headless-tested in CI, not yet run by a person)
 
+[Download the AppImage][linux-dl], then make it executable and run it:
+
 ```bash
 chmod +x Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage
 ./Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage
@@ -210,7 +212,8 @@ that block user namespaces, Electron apps may need an AppArmor profile or `--no-
 
 ### macOS 13+ on Apple Silicon (experimental — built and inspected in CI, never launched)
 
-1. Open `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` and drag the app to Applications.
+1. [Download `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg`][mac-dmg-dl], open it and drag the
+   app to Applications. ([ZIP instead][mac-zip-dl].)
 2. The build is unsigned and not notarized, so Gatekeeper will block first launch:
    right-click the app → **Open** (or remove quarantine with
    `xattr -d com.apple.quarantine` on the app bundle).
@@ -243,7 +246,7 @@ Honest status of the current build — details and evidence in
 | Printing | Preview, job preparation and native duplex/collation option forwarding are tested; **physical printer output is untested**. Printer capabilities and per-printer non-printable margins are not queried (duplex may be unavailable; edge clipping possible with `None` margins). System dialogs/drivers may override settings. Filled form values do not appear in print — save the filled copy and print that. |
 | Search | Substring, case-insensitive, NFC-normalized; no regex, whole-word or diacritic-insensitive modes. |
 | Forms | AcroForm basics only: XFA/dynamic forms, signature fields and JavaScript-driven fields are shown read-only, never guessed. |
-| Size & memory | The artifacts linked above are **93–111 MiB** (Windows setup 97.3 MiB, Windows portable 96.9 MiB, AppImage 93.0 MiB, DMG 106.7 MiB, ZIP 111.4 MiB), down from 118–130 MiB after trimming unused Chromium locales, SwiftShader and app payload (the Cambuz payload is now 5.7 MiB); the rest is the Electron 44 runtime. See [installer size reduction](DEVELOPMENT.md#installer-size-reduction). Idle memory measured roughly 150–165 MiB across CI runs on the Windows runner. |
+| Size & memory | The files linked above are **93–111 MiB** (Windows setup 97.3 MiB, Windows portable 96.9 MiB, AppImage 93.0 MiB, DMG 106.7 MiB, ZIP 111.4 MiB), down from 118–130 MiB after trimming unused Chromium locales, SwiftShader and app payload (the Cambuz payload is now 5.7 MiB); the rest is the Electron 44 runtime. See [installer size reduction](DEVELOPMENT.md#installer-size-reduction). Idle memory measured roughly 150–165 MiB across CI runs on the Windows runner. |
 | OS floors | Windows 10+ x64, macOS 13+ (arm64), modern x64 Linux. Electron 44 dropped Windows 7/8, 32-bit and macOS 12. |
 | No auto-updates | Re-download a new build manually; there is no update service to run in the background. |
 
@@ -315,7 +318,7 @@ content editing, annotation authoring or XFA/signature support.
 
 **Where do I report a bug?**
 [GitHub issues](https://github.com/rajeshkamboj/cambuz-pdf/issues). Download problems? State
-which CI run you used and whether the checksums matched.
+which file and release tag (or CI run) you used, and whether the checksum matched.
 
 ## 🛠 For developers
 
@@ -354,6 +357,10 @@ with bundled third-party components listed with full license texts in
   [1.1.0 pre-release notes](docs/RELEASE-NOTES-1.1.0.md) ·
   [Windows acceptance checklist](docs/WINDOWS-ACCEPTANCE-CHECKLIST.md)
 
-[win-dl]: https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38066446109/artifacts/11674263933
-[linux-dl]: https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38066446109/artifacts/11674794491
-[mac-dl]: https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38066446109/artifacts/11675445206
+[release-page]: https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1
+[win-setup-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe
+[win-portable-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe
+[linux-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage
+[mac-dmg-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg
+[mac-zip-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-mac-arm64.zip
+[sums-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/SHA256SUMS.txt
