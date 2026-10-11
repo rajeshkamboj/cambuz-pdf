@@ -114,6 +114,13 @@
           <span>Fit Width</span>
         </button>
         <div class="toolbar-separator"></div>
+        <button id="btn-view-mode" class="toolbar-btn toolbar-btn-text" title="Page layout: single page — click for continuous scroll (Ctrl+Shift+M)" aria-pressed="false">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="5" y="2" width="14" height="9" rx="1"/><rect x="5" y="13" width="14" height="9" rx="1"/>
+          </svg>
+          <span id="view-mode-label">Page</span>
+        </button>
+        <div class="toolbar-separator"></div>
         <button id="btn-rotate-ccw" class="toolbar-btn" title="Rotate Counter-clockwise (Shift+R)" disabled>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
@@ -152,6 +159,11 @@
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
       <input id="search-input" type="text" placeholder="Search in document…" autocomplete="off" spellcheck="false" aria-label="Search in document">
+      <label class="search-case" title="Match case — make the search case-sensitive">
+        <input id="search-match-case" type="checkbox">
+        <span aria-hidden="true">Aa</span>
+        <span class="visually-hidden">Match case</span>
+      </label>
       <span id="search-count" class="search-count" aria-live="polite"></span>
       <button id="btn-search-prev" class="toolbar-btn" title="Previous Match (Shift+Enter)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -253,6 +265,7 @@
 
         <!-- PDF Viewer (hidden until PDF is loaded) -->
         <div id="pdf-viewer" style="display:none">
+          <!-- Single-page layout: one page at a time (the default). -->
           <div id="pdf-container">
             <div id="page-wrapper">
               <canvas id="pdf-canvas"></canvas>
@@ -260,6 +273,9 @@
               <div id="form-layer" aria-label="Form fields on this page"></div>
             </div>
           </div>
+          <!-- Continuous layout: every page in one scrollable column. Slots are
+               created and dropped lazily while the reader scrolls. -->
+          <div id="pdf-column" class="page-column" hidden></div>
         </div>
 
         <!-- Drop Overlay -->
@@ -318,7 +334,7 @@
           <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td><td>Fill in PDF form fields</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd></td><td>Document security and permissions</td></tr>
           <tr><th colspan="2">Navigation</th></tr>
-          <tr><td><kbd>PageUp</kbd> / <kbd>PageDown</kbd></td><td>Previous / next page</td></tr>
+          <tr><td><kbd>PageUp</kbd> / <kbd>PageDown</kbd> or <kbd>Space</kbd></td><td>Scroll a screen (turns the page at the end)</td></tr>
           <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous / next page</td></tr>
           <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last page</td></tr>
           <tr><td><kbd>F9</kbd></td><td>Toggle sidebar (thumbnails / bookmarks)</td></tr>
@@ -329,6 +345,7 @@
           <tr><td><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd></td><td>Rotate clockwise / counter-clockwise</td></tr>
           <tr><td><kbd>F11</kbd></td><td>Toggle full screen</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td><td>Toggle dark / light theme</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></td><td>Continuous scroll / single page</td></tr>
           <tr><th colspan="2">Search &amp; Text</th></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Search in document</td></tr>
           <tr><td><kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Next / previous match</td></tr>

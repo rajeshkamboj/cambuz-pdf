@@ -207,6 +207,12 @@ function createWindow() {
         },
         { type: 'separator' },
         {
+          label: 'Continuous Scroll / Single Page',
+          accelerator: 'CmdOrCtrl+Shift+M',
+          click: () => mainWindow.webContents.send('menu-view-mode'),
+        },
+        { type: 'separator' },
+        {
           label: 'Previous Page',
           accelerator: 'PageUp',
           click: () => mainWindow.webContents.send('menu-prev-page'),

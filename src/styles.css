@@ -281,6 +281,78 @@ html, body {
   background: white;
 }
 
+/* ============================================================
+   Continuous scroll layout
+   ============================================================ */
+
+/* In continuous mode the viewer itself becomes the page column's scroller;
+   the blank space above page 1 and below the last page lives in the column
+   geometry (see continuous-layout.js), not in padding. */
+#pdf-viewer.continuous {
+  padding: 0;
+  display: block;
+}
+
+.page-column {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+/* One page in the column. The slot exists (as a placeholder box of the right
+   size) as soon as it comes near the viewport; the canvas is painted lazily
+   and released again when the reader scrolls away. */
+.page-slot {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  box-shadow: 0 2px 12px var(--shadow);
+  overflow: hidden;
+}
+
+.page-slot-canvas {
+  display: block;
+  background: white;
+}
+
+.page-slot-text {
+  z-index: 2;
+}
+
+.page-slot-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  color: var(--text-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.page-slot-placeholder span {
+  padding: 5px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.page-slot-rendered .page-slot-placeholder {
+  display: none;
+}
+
+.page-slot-error .page-slot-placeholder {
+  color: var(--error);
+}
+
+/* A toolbar toggle that is currently on (e.g. continuous scroll). */
+.toolbar-btn.active {
+  background: var(--bg-surface);
+  color: var(--accent);
+}
+
 /* Drop Overlay */
 #drop-overlay {
   position: absolute;
@@ -607,6 +679,40 @@ html, body {
   min-width: 70px;
   text-align: right;
   white-space: nowrap;
+}
+
+/* Case-sensitive search toggle in the search bar. */
+.search-case {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.search-case input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.search-case span {
+  line-height: 1;
+}
+
+.search-case:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* --- Page wrapper + text layer --- */
