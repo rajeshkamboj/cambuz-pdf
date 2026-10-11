@@ -268,7 +268,12 @@ jobs:
   # experimental builds succeeded.
   release:
     name: Publish GitHub Release assets
-    if: startsWith(github.ref, 'refs/tags/v') && needs.windows-x64.result == 'success'
+    # `always()` is required. Without it GitHub applies the default success()
+    # status check to this `if`, so a failed — or merely cancelled — experimental
+    # Linux/macOS job would silently skip the release even though those jobs are
+    # explicitly optional and their downloads are allowed to fail. Windows is
+    # the gate: a broken Windows build still publishes nothing.
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.windows-x64.result == 'success'
     needs: [windows-x64, linux-x64, macos-arm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
