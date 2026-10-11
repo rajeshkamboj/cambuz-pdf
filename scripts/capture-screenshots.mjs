@@ -942,14 +942,48 @@ async function main() {
     // Shot 5 — print preview with a real page range and a real printer.
     await pressCtrl('p', 'KeyP', 80);
     await waitFor('the print dialog to open', async () => (await inPage(pageSnapshot)).printOpen);
-    await clickSelector('input[name="print-page-mode"][value="range"]', 'Selected pages');
-    await clickSelector('#print-page-range', 'page range field');
-    await pressCtrl('a', 'KeyA', 65);
-    await typeText('1-2');
-    await waitFor('the page range to be accepted', async () => {
+    // The first sheet is composed on the renderer's main thread, which takes
+    // seconds on a real document. Wait for it before touching the form, so no
+    // click lands while the thread is busy composing the preview.
+    await waitFor('the first print preview sheet', async () => {
       const snapshot = await inPage(pageSnapshot);
-      return snapshot.print.mode === 'range' && snapshot.print.range === '1-2' && snapshot.print.rangeError === '';
+      return snapshot.print.status.startsWith('Preview ready') && snapshot.print.previewWidth > 0 ? snapshot : null;
+    }, 180000);
+    await clickUntil('input[name="print-page-mode"][value="range"]', 'Selected pages', async () => {
+      const snapshot = await inPage(pageSnapshot);
+      return snapshot.print.mode === 'range' ? true : null;
     });
+    // Type the range the way a person does: click the field, select what is
+    // there, type "1-2". If the field does not take it, log the state and try
+    // once more after clearing it.
+    const typeRange = async () => {
+      await clickSelector('#print-page-range', 'page range field');
+      await pressCtrl('a', 'KeyA', 65);
+      await typeText('1-2');
+      return waitFor('the page range to be accepted', async () => {
+        const snapshot = await inPage(pageSnapshot);
+        return snapshot.print.mode === 'range' && snapshot.print.range === '1-2' && snapshot.print.rangeError === '' ? snapshot : null;
+      }, 15000).catch(() => null);
+    };
+    let rangeState = await typeRange();
+    if (!rangeState) {
+      const diagnostic = await evaluate(`(() => {
+        const field = document.getElementById('print-page-range');
+        return {
+          activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null,
+          disabled: field.disabled,
+          value: field.value,
+          mode: [...document.querySelectorAll('input[name="print-page-mode"]')].find((radio) => radio.checked)?.value ?? null,
+          status: document.getElementById('print-status').textContent,
+        };
+      })()`);
+      warn(`the range field did not accept "1-2" (${JSON.stringify(diagnostic)}); clearing it and typing again`);
+      await clickSelector('#print-page-range', 'page range field');
+      await pressCtrl('a', 'KeyA', 65);
+      await key('Backspace', { code: 'Backspace', keyCode: 8 });
+      rangeState = await typeRange();
+    }
+    if (!rangeState) throw new Error('The page range field never accepted "1-2"');
     const printerInfo = await evaluate(`(() => {
       const select = document.getElementById('print-printer');
       const options = [...select.options].map((option) => ({ value: option.value, label: option.textContent }));
