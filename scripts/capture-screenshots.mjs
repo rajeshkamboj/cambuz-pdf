@@ -650,6 +650,43 @@ async function main() {
         await sleep(30);
       }
     };
+    // Typing into a form field: real characters with real virtual key codes,
+    // checked one at a time. A key press can be lost while the renderer is
+    // composing a print preview, and a person whose keystroke went missing
+    // simply presses the key again — which is what this does, with a log line.
+    const CHARACTER_KEYS = {
+      '-': { code: 'Minus', keyCode: 189 },
+      '.': { code: 'Period', keyCode: 190 },
+      ',': { code: 'Comma', keyCode: 188 },
+    };
+    const characterKey = (character) => {
+      if (CHARACTER_KEYS[character]) return CHARACTER_KEYS[character];
+      if (character >= '0' && character <= '9') return { code: `Digit${character}`, keyCode: character.charCodeAt(0) };
+      return { code: null, keyCode: null };
+    };
+    const typeIntoField = async (selector, text) => {
+      const read = () => evaluate(`document.querySelector(${JSON.stringify(selector)}).value`);
+      for (let index = 0; index < text.length; index += 1) {
+        const character = text[index];
+        const info = characterKey(character);
+        const dispatch = async () => {
+          const base = { key: character, code: info.code, windowsVirtualKeyCode: info.keyCode, nativeVirtualKeyCode: info.keyCode, text: character, unmodifiedText: character };
+          await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+          await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base, text: undefined, unmodifiedText: undefined });
+        };
+        await dispatch();
+        await sleep(120);
+        let value = await read();
+        if (value.length <= index) {
+          warn(`character "${character}" did not reach ${selector} (value "${value}"); pressing it again`);
+          await dispatch();
+          await sleep(150);
+          value = await read();
+        }
+        if (value.length <= index) throw new Error(`Key "${character}" never reached ${selector} (value "${value}")`);
+      }
+      return read();
+    };
     const pressCtrl = async (letter, code, keyCode) => {
       await key(letter, { code, keyCode, modifiers: 2 });
     };
@@ -959,11 +996,11 @@ async function main() {
     const typeRange = async () => {
       await clickSelector('#print-page-range', 'page range field');
       await pressCtrl('a', 'KeyA', 65);
-      await typeText('1-2');
+      await typeIntoField('#print-page-range', '1-2');
       return waitFor('the page range to be accepted', async () => {
         const snapshot = await inPage(pageSnapshot);
         return snapshot.print.mode === 'range' && snapshot.print.range === '1-2' && snapshot.print.rangeError === '' ? snapshot : null;
-      }, 15000).catch(() => null);
+      }, 20000).catch(() => null);
     };
     let rangeState = await typeRange();
     if (!rangeState) {
