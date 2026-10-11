@@ -260,3 +260,65 @@ jobs:
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+  # Publishes the raw installers as GitHub Release assets (direct .exe, .AppImage,
+  # .dmg and .zip download links) when a version tag such as v1.1.0 is pushed.
+  # Tags containing a hyphen (for example v1.1.0-rc1) are marked as pre-releases.
+  # Windows is the gating platform; Linux and macOS are attached when their
+  # experimental builds succeeded.
+  release:
+    name: Publish GitHub Release assets
+    if: startsWith(github.ref, 'refs/tags/v') && needs.windows-x64.result == 'success'
+    needs: [windows-x64, linux-x64, macos-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      # Each artifact goes to its own folder: the platforms each ship a
+      # SHA256SUMS.txt, so merging them into one directory would overwrite files.
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: cambuz-pdf-windows-x64
+          path: release-src/windows
+      - name: Download Linux artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: cambuz-pdf-linux-x64
+          path: release-src/linux
+      - name: Download macOS artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: cambuz-pdf-macos-arm64
+          path: release-src/macos
+      - name: Collect installers and write combined checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-out
+          find release-src -type f \( -name '*-setup.exe' -o -name '*-portable.exe' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.zip' \) -exec cp {} release-out/ \;
+          cd release-out
+          ls -la
+          test -n "$(ls *-setup.exe)" && test -n "$(ls *-portable.exe)"
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create or update the GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          prerelease_flag=""
+          if [[ "$TAG" == *-* ]]; then prerelease_flag="--prerelease"; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-out/* --clobber
+          else
+            gh release create "$TAG" release-out/* --verify-tag --title "Cambuz PDF Reader $TAG" \
+              --notes "Unsigned builds for Windows x64 (installer and portable), Linux x64 (AppImage, experimental) and macOS Apple Silicon (DMG and ZIP, experimental). Verify downloads with SHA256SUMS.txt." \
+              $prerelease_flag
+          fi
