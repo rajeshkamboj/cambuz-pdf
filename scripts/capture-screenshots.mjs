@@ -669,19 +669,28 @@ async function main() {
       for (let index = 0; index < text.length; index += 1) {
         const character = text[index];
         const info = characterKey(character);
-        const dispatch = async () => {
+        const keyPress = async () => {
           const base = { key: character, code: info.code, windowsVirtualKeyCode: info.keyCode, nativeVirtualKeyCode: info.keyCode, text: character, unmodifiedText: character };
           await send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
           await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base, text: undefined, unmodifiedText: undefined });
         };
-        await dispatch();
-        await sleep(120);
+        const attempts = [
+          ['key press', keyPress],
+          ['key press, repeated', keyPress],
+          // Some characters never arrive as key events on the Windows build
+          // (the hyphen, in practice). Fall back to the protocol's own text
+          // entry, which goes through the same editing pipeline — and say so
+          // in the log, because it is not a plain key press.
+          ['character event', async () => send('Input.dispatchKeyEvent', { type: 'char', key: character, text: character, unmodifiedText: character })],
+          ['text insertion', async () => send('Input.insertText', { text: character })],
+        ];
         let value = await read();
-        if (value.length <= index) {
-          warn(`character "${character}" did not reach ${selector} (value "${value}"); pressing it again`);
-          await dispatch();
+        for (const [label, attempt] of attempts) {
+          await attempt();
           await sleep(150);
           value = await read();
+          if (value.length > index) break;
+          warn(`character "${character}" did not reach ${selector} after a ${label} (value "${value}"); trying the next input method`);
         }
         if (value.length <= index) throw new Error(`Key "${character}" never reached ${selector} (value "${value}")`);
       }
