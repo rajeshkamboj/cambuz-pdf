@@ -9,3 +9,4 @@ Thumbs.db
 .build-app/
 smoke-test-output/
 smoke/
+/screenshots/

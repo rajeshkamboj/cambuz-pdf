@@ -174,11 +174,30 @@ Work on an in-memory copy — your file on disk is never touched until you save:
 
 ## 📸 Screenshots
 
-No screenshots are committed in this repository yet (only the app icon artwork in
-`assets/`). We would welcome genuine full-window captures of the welcome
-screen, a Hindi or Punjabi document open with the sidebar, and the print dialog — as
-real application captures in `assets/screenshots/`, not mockups. Until then, the sample
-PDFs in [`samples/`](samples) let you judge the rendering with your own copy of the app.
+Real captures of the packaged Windows build, taken from the running application over the
+DevTools protocol by [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)
+on the `Marketing screenshots` workflow — a scripted click of the real buttons, not a
+mockup. PNG masters are 2880×1800 (1440×900 at 2× device pixels, web contents only);
+the files here are 2048×1280 WebP with nothing applied but crop, resize and format
+conversion.
+
+| Welcome screen | Hindi document | Print preview |
+| --- | --- | --- |
+| ![Welcome screen with the Open PDF, Try Sample PDF and Try Sample PDF Form buttons](assets/screenshots/welcome-screen.webp) | ![hindi-sample.pdf open at 116 % zoom with the thumbnails sidebar](assets/screenshots/feature-hindi.webp) | ![Print preview of cambuz-demo.pdf, pages 1-2, Microsoft Print to PDF selected](assets/screenshots/feature-print-preview.webp) |
+
+[`assets/screenshots/`](assets/screenshots) holds the other seven plus `manifest.json`,
+the reading view with page 1 of 10 and thumbnails, page navigation, search with its match
+counter, a mouse-drag text selection, `punjabi-sample.pdf`, the same reading view in the
+light theme and a clean fit-page view. The manifest records the state, sample, theme, size
+and the CI run behind every file. Everything was captured with the bundled PDFs in
+[`samples/`](samples); no document of anyone's own is shown.
+
+Three further captures (the native window on a Windows desktop, with its title bar and the
+taskbar) are still waiting for a machine with an interactive desktop: GitHub's Windows
+runners present a 1024×768 headless session, which cannot hold the 1440×900 window. The
+steps are written out in `capture-report.json` of the `marketing-screenshots` artifact.
+Until then, the sample PDFs in [`samples/`](samples) let you judge the rendering with your
+own copy of the app.
 
 ## Installation & quick start
 

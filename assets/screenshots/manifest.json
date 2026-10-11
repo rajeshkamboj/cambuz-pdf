@@ -1,0 +1,137 @@
+{
+  "generatedAt": "2026-10-11T12:13:21.474Z",
+  "capturedAt": "2026-10-11T12:10:58.332Z",
+  "app": "Cambuz PDF Reader.exe",
+  "platform": "win32-x64",
+  "host": "win32-x64; Node v22.23.3; 4 logical CPUs; 16378 MiB RAM",
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 2
+  },
+  "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+  "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+  "note": "Real captures of the packaged Windows build (scripts/capture-screenshots.mjs). Only crop, resize and WebP conversion were applied.",
+  "screenshots": [
+    {
+      "file": "welcome-screen.webp",
+      "state": "Fresh launch, welcome screen with the Open PDF button and both sample buttons",
+      "sample": null,
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 23554,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "hero-reading-view.webp",
+      "state": "cambuz-demo.pdf open on page 1, sidebar on Thumbnails, Fit width",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 51172,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-reading.webp",
+      "state": "cambuz-demo.pdf page 2 reached from the thumbnail panel, Fit width",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 51006,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-search.webp",
+      "state": "Search for \"page\" on cambuz-demo.pdf page 2: highlights plus the real match counter",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 52928,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-text-selection.webp",
+      "state": "A paragraph on cambuz-demo.pdf page 2 selected with a real mouse drag",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 49934,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-print-preview.webp",
+      "state": "Print preview for cambuz-demo.pdf with page range 1-2 and a real installed printer selected",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 60266,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-hindi.webp",
+      "state": "hindi-sample.pdf open, Fit page then zoomed to 116% so Devanagari text is readable",
+      "sample": "hindi-sample.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 24514,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "feature-punjabi.webp",
+      "state": "punjabi-sample.pdf open, Fit page then zoomed to 116% so Gurmukhi text is readable",
+      "sample": "punjabi-sample.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 24396,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "lightweight-clean-view.webp",
+      "state": "cambuz-demo.pdf page 1, sidebar closed, Fit page, nothing else on screen",
+      "sample": "cambuz-demo.pdf",
+      "theme": "dark",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 32310,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    },
+    {
+      "file": "theme-light.webp",
+      "state": "The hero reading view — page 1, thumbnails, Fit width — in the light theme",
+      "sample": "cambuz-demo.pdf",
+      "theme": "light",
+      "width": 2048,
+      "height": 1280,
+      "bytes": 51318,
+      "commit": "c34837ee6e214dd98047f0deafe68f93dbd5d919",
+      "ciRunUrl": "https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38138112647",
+      "method": "cdp-content"
+    }
+  ]
+}
