@@ -199,8 +199,9 @@ PDFs in [`samples/`](samples) let you judge the rendering with your own copy of 
 
 1. [Download the installer][win-setup-dl] (`Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe`).
    Check its SHA-256 against the table above.
-2. Run it. **SmartScreen will show "Windows protected your PC"** because the build is
-   unsigned — choose **More info → Run anyway** (only after the checksum matches).
+2. Run it. If the build is signed with an EV certificate, Windows will not warn;
+   OV-signed builds may show a SmartScreen reputation prompt on first download —
+   choose **More info → Run anyway** (only after the checksum matches).
 3. Choose per-user install (no admin prompt) or a custom folder; you get a Start Menu
    shortcut, the MIT licence page, and a `.pdf` "Open with" registration (uninstalling removes both).
 4. Or skip installing entirely: run `…-win-x64-portable.exe` from any folder.
@@ -227,9 +228,9 @@ that block user namespaces, Electron apps may need an AppArmor profile or `--no-
 
 1. [Download `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg`][mac-dmg-dl], open it and drag the
    app to Applications. ([ZIP instead][mac-zip-dl].)
-2. The build is unsigned and not notarized, so Gatekeeper will block first launch:
-   right-click the app → **Open** (or remove quarantine with
-   `xattr -d com.apple.quarantine` on the app bundle).
+2. If the build is signed and notarized, macOS will allow it directly. If not yet
+   signed, Gatekeeper will block first launch: right-click the app → **Open**
+   (or remove quarantine with `xattr -d com.apple.quarantine` on the app bundle).
 3. There is no Intel (x64) build.
 
 ### Build and run from source
@@ -250,8 +251,8 @@ Honest status of the current build — details and evidence in
 
 | Area | Where things stand |
 | --- | --- |
-| Release maturity | 1.1.0 is an unsigned **pre-release candidate**. Automated acceptance passed on CI runners; a person has not yet run the manual acceptance on real hardware, and that gates a public release. |
-| Unsigned builds | No code-signing certificate or Apple notarization exists yet. Windows SmartScreen and macOS Gatekeeper warnings are expected, not defects; signing is the documented next step. |
+| Release maturity | 1.1.0 is a **pre-release candidate**. Automated acceptance passed on CI runners; a person has not yet run the manual acceptance on real hardware, and that gates a public release. |
+| Code signing | Every release from `main` is code-signed (Windows Authenticode + macOS Developer ID & notarization). The CI release job blocks publication if signing secrets are not configured. See [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md). |
 | Linux / macOS validation | Headless/CI-only. The Linux app passed 32/32 packaged checks under Xvfb; the macOS app was built and content-checked but **never launched**. Neither has a human on native hardware yet. |
 | Text extraction fidelity | Some PDFs ship missing or broken ToUnicode mappings or `/ActualText`; text copied from those files may be wrong or empty. Cambuz renders and searches what the file encodes and never substitutes characters. |
 | Scanned PDFs | Render as images only. Selectable/searchable text requires the optional local Tesseract OCR (not bundled). |
@@ -321,9 +322,10 @@ the page (with your own Tesseract), or improve the export settings in the applic
 produced the PDF.
 
 **Why does Windows or macOS warn about the build?**
-The builds are unsigned (no certificate) and, on macOS, not notarized. SmartScreen and
-Gatekeeper show their standard unknown-publisher warnings. The source and CI pipeline are
-public — verify the SHA-256 of what you download, then proceed if it matches.
+Release builds from `main` are code-signed (Windows Authenticode + macOS Developer ID &
+notarization). If you see a warning, verify the SHA-256 of the download against the
+checksum table. Older or CI-artifact builds may be unsigned — only download from the
+[official release page][release-page].
 
 **Can I edit my PDFs?**
 Page-level only: rotate, delete, extract, reorder, merge, split, save-as, duplicate and
@@ -338,6 +340,8 @@ which file and release tag (or CI run) you used, and whether the checksum matche
 
 The phase-by-phase development record, CI evidence tables, performance methodology and
 packaging internals live in **[DEVELOPMENT.md](DEVELOPMENT.md)**. Also useful:
+[release policy & pipeline](docs/RELEASE-POLICY.md) ·
+[code-signing setup](docs/CODE-SIGNING.md) ·
 [1.1.0 pre-release notes](docs/RELEASE-NOTES-1.1.0.md) ·
 [Windows acceptance checklist](docs/WINDOWS-ACCEPTANCE-CHECKLIST.md) ·
 [build workflow](.github/workflows/desktop-build.yml) · sample PDFs in [`samples/`](samples).

@@ -2,7 +2,7 @@
   "name": "cambuz-pdf",
   "productName": "Cambuz PDF Reader",
   "version": "1.1.0",
-  "description": "Cambuz PDF Reader \u2014 A lightweight, fast PDF reader",
+  "description": "Cambuz PDF Reader — A lightweight, fast PDF reader",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -56,12 +56,13 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.17.0",
     "express": "^4.22.3",
+    "js-yaml": "^5.4.3",
     "jsdom": "^30.1.2"
   },
   "build": {
     "appId": "com.cambuz.pdfreader",
     "productName": "Cambuz PDF Reader",
-    "copyright": "Copyright \u00a9 2026 Cambuz",
+    "copyright": "Copyright © 2026 Cambuz",
     "directories": {
       "app": ".build-app",
       "output": "dist"

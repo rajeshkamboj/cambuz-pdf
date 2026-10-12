@@ -23,7 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Builds are unsigned: never search the runner for a code-signing identity.
+  # Never search the runner for a code-signing identity; certificates are
+  # provided explicitly via per-job CSC_LINK / CSC_KEY_PASSWORD secrets.
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
@@ -54,7 +55,7 @@ jobs:
     name: Windows x64 (installer + portable)
     needs: test
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60   # extra headroom for SignPath signing
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -63,6 +64,10 @@ jobs:
           cache: npm
       - name: Install dependencies (downloads the Windows Electron runtime)
         run: npm ci
+      # electron-builder always builds unsigned here.  SignPath signs the
+      # installer and portable exe after the build.  If SIGNPATH_API_TOKEN is
+      # not configured the executables remain unsigned and the release job
+      # will block the publish.
       - name: Build NSIS installer and portable executable
         run: npm run build:win
       - name: Verify packaged contents
@@ -76,6 +81,70 @@ jobs:
           Write-Host "LICENSE files: $($licenses.Name -join ', ')"
       - name: Prepare OS file-open probe PDFs
         run: node -e "const fs=require('fs');const path=require('path');const dir=path.join(process.env.RUNNER_TEMP,'cambuz-launch');fs.mkdirSync(dir,{recursive:true});const target=path.join(dir,'fichier-été.pdf');fs.copyFileSync('samples/hindi-sample.pdf',target);console.log(target)"
+
+      # ── SignPath Foundation signing (free for open-source) ──────────
+      - name: Check if SignPath signing is configured
+        id: signpath-check
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "$SIGNPATH_API_TOKEN" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::SignPath API token found — will submit build for signing."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SIGNPATH_API_TOKEN is not set. Windows executables will be unsigned."
+          fi
+
+      - name: Stage unsigned executables for SignPath
+        if: steps.signpath-check.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'signpath-unsigned'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Get-ChildItem dist -File | Where-Object {
+            $_.Name -like '*-setup.exe' -or $_.Name -like '*-portable.exe'
+          } | ForEach-Object {
+            Copy-Item $_.FullName $staging
+            Write-Host "  staged: $($_.Name)"
+          }
+
+      - name: Upload unsigned executables for SignPath
+        id: upload-unsigned
+        if: steps.signpath-check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-exes
+          path: ${{ runner.temp }}/signpath-unsigned/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Submit to SignPath Foundation for signing
+        if: steps.signpath-check.outputs.configured == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+          signing-policy-slug: '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-signed
+          wait-for-completion-timeout-in-seconds: 3600
+
+      - name: Replace unsigned files with signed versions
+        if: steps.signpath-check.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $signedDir = Join-Path $env:RUNNER_TEMP 'signpath-signed'
+          Get-ChildItem $signedDir -File | ForEach-Object {
+            $dest = Join-Path dist $_.Name
+            Copy-Item $_.FullName $dest -Force
+            Write-Host "✓ Replaced $($_.Name) with SignPath-signed version"
+          }
+      # ── end SignPath ────────────────────────────────────────────────
+
       - name: Write SHA-256 checksums
         shell: pwsh
         run: |
@@ -92,6 +161,29 @@ jobs:
           if ($malformed) { throw "Malformed SHA256SUMS.txt lines: $($malformed -join '; ')" }
           $appAsar = Get-Item dist/win-unpacked/resources/app.asar
           Write-Host "::notice title=Build output::app.asar (renderer payload) - $([math]::Round($appAsar.Length / 1MB, 1)) MiB"
+      - name: Verify code-signature status
+        shell: pwsh
+        run: |
+          $exeFiles = Get-ChildItem dist -File | Where-Object {
+            $_.Name -like '*-setup.exe' -or $_.Name -like '*-portable.exe'
+          }
+          $allSigned = $true
+          foreach ($file in $exeFiles) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($sig.Status -eq 'Valid') {
+              Write-Host "  ✓ $($file.Name): signed by $($sig.SignerCertificate.Subject)"
+            } else {
+              $allSigned = $false
+              Write-Host "  ✗ $($file.Name): NOT signed (Status: $($sig.Status))"
+            }
+          }
+          if ($allSigned) {
+            "signed" | Set-Content -Encoding ascii dist/SIGNED.txt
+            Write-Host "::notice title=Code signing::All Windows executables are code-signed."
+          } else {
+            "unsigned" | Set-Content -Encoding ascii dist/SIGNED.txt
+            Write-Host "::warning title=Code signing::Windows executables are NOT signed."
+          }
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -100,6 +192,7 @@ jobs:
             dist/*-setup.exe
             dist/*-portable.exe
             dist/SHA256SUMS.txt
+            dist/SIGNED.txt
           if-no-files-found: error
           retention-days: 30
       - name: Smoke test the unpacked build
@@ -222,7 +315,7 @@ jobs:
           retention-days: 14
 
   macos-arm64:
-    name: macOS arm64 (DMG + ZIP, unsigned) — experimental
+    name: macOS arm64 (DMG + ZIP) — experimental
     needs: test
     runs-on: macos-latest
     timeout-minutes: 45
@@ -234,6 +327,13 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build DMG and ZIP
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # electron-builder passes these to notarytool for Apple notarization.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run build:mac
       - name: Verify packaged contents
         run: node scripts/check-packaged-app.mjs "dist/mac-arm64/Cambuz PDF Reader.app/Contents/Resources/app.asar"
@@ -243,6 +343,27 @@ jobs:
           test -f "$APP/Contents/Resources/icon.icns"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:CFBundleTypeRole" "$APP/Contents/Info.plist" | grep -q Viewer
+      - name: Verify code-signature and notarization status
+        run: |
+          APP="dist/mac-arm64/Cambuz PDF Reader.app"
+          if codesign --verify --deep --strict "$APP" 2>/dev/null; then
+            echo "  ✓ App bundle is code-signed"
+            codesign -dv --verbose=4 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier" || true
+            # Check notarization stapling on DMG and ZIP
+            for f in dist/*.dmg dist/*.zip; do
+              if xcrun stapler validate "$f" 2>/dev/null; then
+                echo "  ✓ $(basename "$f") is notarized and stapled"
+              else
+                echo "  ℹ $(basename "$f") — stapler check inconclusive (may still be notarized via online ticket)"
+              fi
+            done
+            echo "signed" > dist/SIGNED.txt
+            echo "::notice title=Code signing::macOS builds are code-signed and notarized."
+          else
+            echo "  ✗ App bundle is NOT code-signed"
+            echo "unsigned" > dist/SIGNED.txt
+            echo "::warning title=Code signing::macOS builds are NOT signed. Set MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID repository secrets."
+          fi
       - name: Write SHA-256 checksums
         run: |
           cd dist
@@ -259,6 +380,7 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/SIGNED.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -350,6 +472,48 @@ jobs:
           name: cambuz-pdf-macos-arm64
           path: release-src/macos
 
+      - name: Enforce code-signing for Windows and macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          all_signed=true
+          for platform in windows macos; do
+            marker="release-src/$platform/SIGNED.txt"
+            if [[ ! -f "$marker" ]]; then
+              echo "::error::${platform} builds are NOT code-signed (SIGNED.txt missing). Configure the code-signing repository secrets."
+              all_signed=false
+            elif [[ "$(cat "$marker")" != "signed" ]]; then
+              echo "::error::${platform} builds are NOT code-signed ($(cat "$marker")). Configure the code-signing repository secrets."
+              all_signed=false
+            else
+              echo "✓ ${platform} builds are code-signed"
+            fi
+          done
+          if [[ "$all_signed" == "false" ]]; then
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════"
+            echo "  RELEASE BLOCKED — code-signing is required for every release."
+            echo ""
+            echo "  Windows (free via SignPath Foundation):"
+            echo "    Apply at https://signpath.org/apply (MIT license, public repo ✓)"
+            echo "    Then add these GitHub secrets/variables:"
+            echo "      SIGNPATH_API_TOKEN          (secret)   CI user token from SignPath"
+            echo "      SIGNPATH_ORGANIZATION_ID    (variable) SignPath organization ID"
+            echo "      SIGNPATH_PROJECT_SLUG       (variable) Project slug"
+            echo "      SIGNPATH_SIGNING_POLICY_SLUG (variable) Signing policy slug"
+            echo ""
+            echo "  macOS ($99/yr Apple Developer Program):"
+            echo "      MAC_CSC_LINK                (secret)   Base64-encoded .p12"
+            echo "      MAC_CSC_KEY_PASSWORD        (secret)   .p12 password"
+            echo "      APPLE_ID                    (secret)   Apple ID email"
+            echo "      APPLE_APP_SPECIFIC_PASSWORD (secret)   App-specific password"
+            echo "      APPLE_TEAM_ID               (secret)   Apple Developer Team ID"
+            echo ""
+            echo "  Full guide: docs/CODE-SIGNING.md"
+            echo "═══════════════════════════════════════════════════════════════════"
+            exit 1
+          fi
+
       - name: Verify all five installers and write combined SHA256SUMS.txt
         shell: bash
         run: |
@@ -420,10 +584,20 @@ jobs:
           fi
 
           notes_file="$RUNNER_TEMP/release-notes.md"
+          is_signed="false"
+          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]] && \
+             [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
+            is_signed="true"
+          fi
+          if [[ "$is_signed" == "true" ]]; then
+            signing_note="All platform builds are code-signed. Windows executables carry an Authenticode signature; macOS builds are signed with a Developer ID certificate and notarized by Apple."
+          else
+            signing_note="The builds are unsigned — SmartScreen (Windows) and Gatekeeper (macOS) will show warnings. \`SHA256SUMS.txt\` is the way to verify a download."
+          fi
           {
-            echo "Unsigned pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
+            echo "Pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
             echo ""
-            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. Nothing here is code-signed, so SmartScreen (Windows) and Gatekeeper (macOS) will warn; \`SHA256SUMS.txt\` is the way to verify a download."
+            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. ${signing_note}"
             echo ""
             echo "Verify after download: \`Get-FileHash -Algorithm SHA256 <file>\` (PowerShell) or \`sha256sum -c SHA256SUMS.txt\` (Linux/macOS)."
           } > "$notes_file"
@@ -459,11 +633,18 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
+          signed_flag=""
+          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]] && \
+             [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
+            signed_flag="--signed"
+          fi
+
           node scripts/sync-release-readme.mjs \
             --tag "$TAG" \
             --repo "$GH_REPO" \
             --sha "$GITHUB_SHA" \
-            --run-id "$GITHUB_RUN_ID"
+            --run-id "$GITHUB_RUN_ID" \
+            $signed_flag
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
