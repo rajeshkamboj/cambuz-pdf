@@ -1,9 +1,10 @@
 name: Desktop builds
 
-# Packages the Electron desktop app. Windows x64 is the Phase 9 target and is a
-# gating job; Linux and macOS are experimental feasibility builds that report
-# their own result. Artifacts are uploaded before runtime smoke tests so the
-# build output is kept even when a runtime check fails.
+# Packages the Electron desktop app, runs packaged smoke tests, and on every
+# successful push to `main` publishes a pinned GitHub pre-release containing all
+# five platform installers, updates the marked download sections in README.md,
+# and notifies rajeshkamboj/cambuz-landing. Pull request runs remain
+# validation-only and never publish a release.
 
 on:
   push:
@@ -40,6 +41,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate landing-site feature manifest
+        run: node scripts/validate-landing-content.mjs
       - run: npm test
       - uses: actions/setup-python@v6
         with:
@@ -163,7 +166,6 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -224,7 +226,6 @@ jobs:
     needs: test
     runs-on: macos-latest
     timeout-minutes: 45
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -261,19 +262,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Publishes the raw installers as GitHub Release assets (direct .exe, .AppImage,
-  # .dmg and .zip download links) when a version tag such as v1.1.0 is pushed.
-  # Tags containing a hyphen (for example v1.1.0-rc1) are marked as pre-releases.
-  # Windows is the gating platform; Linux and macOS are attached when their
-  # experimental builds succeeded.
+  # Publishes a complete five-binary GitHub Release when `main` or a manual `v*`
+  # tag is pushed and all platform build jobs succeeded. Automatic `main` builds
+  # create/update a pinned pre-release (`v<version>-build.<run_number>`), sync
+  # the marked sections of README.md, and notify `rajeshkamboj/cambuz-landing`.
   release:
     name: Publish GitHub Release assets
-    # `always()` is required. Without it GitHub applies the default success()
-    # status check to this `if`, so a failed — or merely cancelled — experimental
-    # Linux/macOS job would silently skip the release even though those jobs are
-    # explicitly optional and their downloads are allowed to fail. Windows is
-    # the gate: a broken Windows build still publishes nothing.
-    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.windows-x64.result == 'success'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
+      needs.windows-x64.result == 'success' &&
+      needs.linux-x64.result == 'success' &&
+      needs.macos-arm64.result == 'success'
     needs: [windows-x64, linux-x64, macos-arm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -282,48 +282,233 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
     steps:
-      # Each artifact goes to its own folder: the platforms each ship a
-      # SHA256SUMS.txt, so merging them into one directory would overwrite files.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate landing-site feature manifest
+        run: node scripts/validate-landing-content.mjs
+
+      - name: Determine release tag and mode
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          if [[ -z "$pkg_version" ]]; then
+            echo "::error::Failed to read version from package.json"
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            tag="v${pkg_version}-build.${GITHUB_RUN_NUMBER}"
+            is_auto_main="true"
+            is_prerelease="true"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+            is_auto_main="false"
+            if [[ "$tag" == *-* ]]; then
+              is_prerelease="true"
+            else
+              is_prerelease="false"
+            fi
+          else
+            echo "::error::Unsupported ref for release publishing: ${GITHUB_REF}"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${pkg_version}" >> "$GITHUB_OUTPUT"
+          echo "is_auto_main=${is_auto_main}" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: ${tag} (auto_main=${is_auto_main}, prerelease=${is_prerelease})"
+
+      # Each artifact goes to its own folder because each platform job writes a
+      # per-platform SHA256SUMS.txt. All three downloads are required so a
+      # partial release can never be published.
       - name: Download Windows artifacts
         uses: actions/download-artifact@v7
         with:
           name: cambuz-pdf-windows-x64
           path: release-src/windows
+
       - name: Download Linux artifacts
-        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: cambuz-pdf-linux-x64
           path: release-src/linux
+
       - name: Download macOS artifacts
-        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: cambuz-pdf-macos-arm64
           path: release-src/macos
-      - name: Collect installers and write combined checksums
+
+      - name: Verify all five installers and write combined SHA256SUMS.txt
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          rm -rf release-out
           mkdir -p release-out
-          find release-src -type f \( -name '*-setup.exe' -o -name '*-portable.exe' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.zip' \) -exec cp {} release-out/ \;
+          find release-src -type f \( \
+            -name '*-win-x64-setup.exe' -o \
+            -name '*-win-x64-portable.exe' -o \
+            -name '*-linux-x86_64.AppImage' -o \
+            -name '*-mac-arm64.dmg' -o \
+            -name '*-mac-arm64.zip' \
+          \) -exec cp {} release-out/ \;
           cd release-out
           ls -la
-          test -n "$(ls *-setup.exe)" && test -n "$(ls *-portable.exe)"
-          sha256sum * > SHA256SUMS.txt
+
+          required_patterns=(
+            '*-win-x64-setup.exe'
+            '*-win-x64-portable.exe'
+            '*-linux-x86_64.AppImage'
+            '*-mac-arm64.dmg'
+            '*-mac-arm64.zip'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            matches=( $pattern )
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              echo "::error::Expected exactly 1 file matching '${pattern}', found ${#matches[@]}: ${matches[*]:-none}"
+              exit 1
+            fi
+            if [[ ! -s "${matches[0]}" ]]; then
+              echo "::error::Release asset '${matches[0]}' is empty"
+              exit 1
+            fi
+          done
+
+          binaries=( * )
+          if [[ "${#binaries[@]}" -ne 5 ]]; then
+            echo "::error::Expected exactly 5 release binaries before checksum generation, found ${#binaries[@]}: ${binaries[*]}"
+            exit 1
+          fi
+
+          sha256sum "${binaries[@]}" > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Create or update the GitHub Release
+          line_count="$(wc -l < SHA256SUMS.txt | tr -d ' ')"
+          if [[ "$line_count" -ne 5 ]]; then
+            echo "::error::Expected 5 checksum lines in SHA256SUMS.txt, got ${line_count}"
+            exit 1
+          fi
+
+      - name: Create or update the pinned GitHub Release
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          PKG_VERSION: ${{ steps.meta.outputs.version }}
+          IS_AUTO_MAIN: ${{ steps.meta.outputs.is_auto_main }}
+          IS_PRERELEASE: ${{ steps.meta.outputs.is_prerelease }}
         shell: bash
         run: |
           set -euo pipefail
+          short_sha="${GITHUB_SHA:0:7}"
+          run_url="https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ "$IS_AUTO_MAIN" == "true" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG" --force
+          fi
+
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Unsigned pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
+            echo ""
+            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. Nothing here is code-signed, so SmartScreen (Windows) and Gatekeeper (macOS) will warn; \`SHA256SUMS.txt\` is the way to verify a download."
+            echo ""
+            echo "Verify after download: \`Get-FileHash -Algorithm SHA256 <file>\` (PowerShell) or \`sha256sum -c SHA256SUMS.txt\` (Linux/macOS)."
+          } > "$notes_file"
+
           prerelease_flag=""
-          if [[ "$TAG" == *-* ]]; then prerelease_flag="--prerelease"; fi
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-out/* --clobber
+            gh release edit "$TAG" \
+              --title "Cambuz PDF Reader $TAG" \
+              --notes-file "$notes_file" \
+              --prerelease="$IS_PRERELEASE" \
+              --draft=false
           else
-            gh release create "$TAG" release-out/* --verify-tag --title "Cambuz PDF Reader $TAG" \
-              --notes "Unsigned builds for Windows x64 (installer and portable), Linux x64 (AppImage, experimental) and macOS Apple Silicon (DMG and ZIP, experimental). Verify downloads with SHA256SUMS.txt." \
+            gh release create "$TAG" release-out/* \
+              --verify-tag \
+              --target "$GITHUB_SHA" \
+              --title "Cambuz PDF Reader $TAG" \
+              --notes-file "$notes_file" \
               $prerelease_flag
           fi
+
+      - name: Synchronize README download links and commit to main
+        if: steps.meta.outputs.is_auto_main == 'true'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B main origin/main
+
+          node scripts/sync-release-readme.mjs \
+            --tag "$TAG" \
+            --repo "$GH_REPO" \
+            --sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- README.md; then
+            echo "README.md is already synchronized with release $TAG."
+          else
+            git add README.md
+            git commit -m "chore(release): sync README downloads for $TAG"
+            git push origin HEAD:refs/heads/main
+          fi
+
+      - name: Notify cambuz-landing
+        if: steps.meta.outputs.is_auto_main == 'true'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          SOURCE_SHA: ${{ github.sha }}
+          CAMBUZ_LANDING_DISPATCH_TOKEN: ${{ secrets.CAMBUZ_LANDING_DISPATCH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CAMBUZ_LANDING_DISPATCH_TOKEN:-}" ]]; then
+            echo "::warning::CAMBUZ_LANDING_DISPATCH_TOKEN is not set; skipping repository_dispatch to rajeshkamboj/cambuz-landing. The landing site's hourly repair sync will pick up release $TAG."
+            exit 0
+          fi
+
+          payload="$(node -e 'console.log(JSON.stringify({
+            event_type: "cambuz-release-published",
+            client_payload: {
+              tag: process.env.TAG,
+              source_sha: process.env.SOURCE_SHA,
+            },
+          }))')"
+
+          status_code="$(curl -sS -o "$RUNNER_TEMP/dispatch-response.txt" -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${CAMBUZ_LANDING_DISPATCH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/rajeshkamboj/cambuz-landing/dispatches \
+            -d "$payload")"
+
+          if [[ "$status_code" != "204" ]]; then
+            echo "::error::Failed to dispatch cambuz-release-published to rajeshkamboj/cambuz-landing (HTTP ${status_code}): $(cat "$RUNNER_TEMP/dispatch-response.txt")"
+            exit 1
+          fi
+          echo "Dispatched cambuz-release-published (tag=${TAG}, source_sha=${SOURCE_SHA}) to rajeshkamboj/cambuz-landing."
