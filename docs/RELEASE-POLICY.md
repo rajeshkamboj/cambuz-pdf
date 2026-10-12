@@ -131,16 +131,21 @@ tags like `v1.1.0-build.53`. When the project is ready for a stable release:
 
 ## Required GitHub repository secrets
 
-| Secret | Purpose |
-|---|---|
-| `WIN_CSC_LINK` | Base64-encoded Windows `.pfx` code-signing certificate |
-| `WIN_CSC_KEY_PASSWORD` | Password for the `.pfx` file |
-| `MAC_CSC_LINK` | Base64-encoded macOS `.p12` Developer ID certificate |
-| `MAC_CSC_KEY_PASSWORD` | Password for the `.p12` file |
-| `APPLE_ID` | Apple ID email for notarization |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for notarization |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
-| `CAMBUZ_LANDING_DISPATCH_TOKEN` | Fine-grained PAT for `rajeshkamboj/cambuz-landing` |
+| Name | Type | Platform | Purpose |
+|---|---|---|---|
+| `SIGNPATH_API_TOKEN` | Secret | Windows | SignPath CI user token (free for open source) |
+| `SIGNPATH_ORGANIZATION_ID` | Variable | Windows | SignPath organization ID |
+| `SIGNPATH_PROJECT_SLUG` | Variable | Windows | SignPath project slug |
+| `SIGNPATH_SIGNING_POLICY_SLUG` | Variable | Windows | SignPath signing policy slug |
+| `MAC_CSC_LINK` | Secret | macOS | Base64-encoded `.p12` Developer ID certificate |
+| `MAC_CSC_KEY_PASSWORD` | Secret | macOS | `.p12` password |
+| `APPLE_ID` | Secret | macOS | Apple ID email for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | Secret | macOS | App-specific password |
+| `APPLE_TEAM_ID` | Secret | macOS | Apple Developer Team ID |
+| `CAMBUZ_LANDING_DISPATCH_TOKEN` | Secret | Landing site | Fine-grained PAT for `rajeshkamboj/cambuz-landing` |
+
+Windows signing is **free** via [SignPath Foundation](https://signpath.org/).
+macOS signing requires the Apple Developer Program ($99/yr).
 
 See [CODE-SIGNING.md](CODE-SIGNING.md) for step-by-step setup.
 

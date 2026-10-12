@@ -310,7 +310,7 @@ export function renderDownloadsSection(meta) {
   }
 
   const signingNotice = isSigned
-    ? '> All platform builds are **code-signed** (Windows Authenticode + macOS Developer ID & notarization).\n> A manual acceptance pass on real hardware still gates a full stable release.'
+    ? '> All platform builds are **code-signed** (Windows via [SignPath Foundation](https://signpath.org/) · macOS Developer ID & notarization).\n> A manual acceptance pass on real hardware still gates a full stable release.'
     : '> Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.\n> A manual acceptance pass on real hardware still gates a full stable release.';
 
   const macDmgNote = isSigned ? 'Signed & notarized; drag to Applications' : 'Drag-to-Applications disk image; unsigned and not notarized';

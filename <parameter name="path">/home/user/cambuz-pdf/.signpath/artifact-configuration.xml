@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath Foundation artifact configuration for Cambuz PDF Reader.
+  This tells SignPath which files in the uploaded artifact to sign.
+
+  The CI workflow uploads a directory containing:
+    Cambuz-PDF-Reader-<version>-win-x64-setup.exe    (NSIS installer)
+    Cambuz-PDF-Reader-<version>-win-x64-portable.exe (portable executable)
+
+  SignPath signs both .exe files with its Sectigo-issued certificate.
+  The signed publisher will show as "SignPath Foundation".
+
+  Keep this file in sync with the artifact names in package.json → build.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <sign>
+    <file-filter>*-win-x64-setup.exe</file-filter>
+  </sign>
+  <sign>
+    <file-filter>*-win-x64-portable.exe</file-filter>
+  </sign>
+</artifact-configuration>

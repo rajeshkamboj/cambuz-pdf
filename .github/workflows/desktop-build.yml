@@ -55,7 +55,7 @@ jobs:
     name: Windows x64 (installer + portable)
     needs: test
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60   # extra headroom for SignPath signing
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -64,10 +64,11 @@ jobs:
           cache: npm
       - name: Install dependencies (downloads the Windows Electron runtime)
         run: npm ci
+      # electron-builder always builds unsigned here.  SignPath signs the
+      # installer and portable exe after the build.  If SIGNPATH_API_TOKEN is
+      # not configured the executables remain unsigned and the release job
+      # will block the publish.
       - name: Build NSIS installer and portable executable
-        env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run build:win
       - name: Verify packaged contents
         run: node scripts/check-packaged-app.mjs dist/win-unpacked/resources/app.asar
@@ -80,6 +81,70 @@ jobs:
           Write-Host "LICENSE files: $($licenses.Name -join ', ')"
       - name: Prepare OS file-open probe PDFs
         run: node -e "const fs=require('fs');const path=require('path');const dir=path.join(process.env.RUNNER_TEMP,'cambuz-launch');fs.mkdirSync(dir,{recursive:true});const target=path.join(dir,'fichier-été.pdf');fs.copyFileSync('samples/hindi-sample.pdf',target);console.log(target)"
+
+      # ── SignPath Foundation signing (free for open-source) ──────────
+      - name: Check if SignPath signing is configured
+        id: signpath-check
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "$SIGNPATH_API_TOKEN" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::SignPath API token found — will submit build for signing."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SIGNPATH_API_TOKEN is not set. Windows executables will be unsigned."
+          fi
+
+      - name: Stage unsigned executables for SignPath
+        if: steps.signpath-check.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'signpath-unsigned'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Get-ChildItem dist -File | Where-Object {
+            $_.Name -like '*-setup.exe' -or $_.Name -like '*-portable.exe'
+          } | ForEach-Object {
+            Copy-Item $_.FullName $staging
+            Write-Host "  staged: $($_.Name)"
+          }
+
+      - name: Upload unsigned executables for SignPath
+        id: upload-unsigned
+        if: steps.signpath-check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-exes
+          path: ${{ runner.temp }}/signpath-unsigned/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Submit to SignPath Foundation for signing
+        if: steps.signpath-check.outputs.configured == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: '${{ vars.SIGNPATH_PROJECT_SLUG }}'
+          signing-policy-slug: '${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-signed
+          wait-for-completion-timeout-in-seconds: 3600
+
+      - name: Replace unsigned files with signed versions
+        if: steps.signpath-check.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $signedDir = Join-Path $env:RUNNER_TEMP 'signpath-signed'
+          Get-ChildItem $signedDir -File | ForEach-Object {
+            $dest = Join-Path dist $_.Name
+            Copy-Item $_.FullName $dest -Force
+            Write-Host "✓ Replaced $($_.Name) with SignPath-signed version"
+          }
+      # ── end SignPath ────────────────────────────────────────────────
+
       - name: Write SHA-256 checksums
         shell: pwsh
         run: |
@@ -117,7 +182,7 @@ jobs:
             Write-Host "::notice title=Code signing::All Windows executables are code-signed."
           } else {
             "unsigned" | Set-Content -Encoding ascii dist/SIGNED.txt
-            Write-Host "::warning title=Code signing::Windows executables are NOT signed. Set WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD repository secrets."
+            Write-Host "::warning title=Code signing::Windows executables are NOT signed."
           }
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
@@ -429,18 +494,20 @@ jobs:
             echo "═══════════════════════════════════════════════════════════════════"
             echo "  RELEASE BLOCKED — code-signing is required for every release."
             echo ""
-            echo "  Configure these GitHub repository secrets (Settings → Secrets):"
+            echo "  Windows (free via SignPath Foundation):"
+            echo "    Apply at https://signpath.org/apply (MIT license, public repo ✓)"
+            echo "    Then add these GitHub secrets/variables:"
+            echo "      SIGNPATH_API_TOKEN          (secret)   CI user token from SignPath"
+            echo "      SIGNPATH_ORGANIZATION_ID    (variable) SignPath organization ID"
+            echo "      SIGNPATH_PROJECT_SLUG       (variable) Project slug"
+            echo "      SIGNPATH_SIGNING_POLICY_SLUG (variable) Signing policy slug"
             echo ""
-            echo "    Windows:"
-            echo "      WIN_CSC_LINK          Base64-encoded .pfx certificate"
-            echo "      WIN_CSC_KEY_PASSWORD  Password for the .pfx file"
-            echo ""
-            echo "    macOS:"
-            echo "      MAC_CSC_LINK          Base64-encoded .p12 certificate"
-            echo "      MAC_CSC_KEY_PASSWORD  Password for the .p12 file"
-            echo "      APPLE_ID              Apple ID email"
-            echo "      APPLE_APP_SPECIFIC_PASSWORD  App-specific password"
-            echo "      APPLE_TEAM_ID         Apple Developer Team ID"
+            echo "  macOS ($99/yr Apple Developer Program):"
+            echo "      MAC_CSC_LINK                (secret)   Base64-encoded .p12"
+            echo "      MAC_CSC_KEY_PASSWORD        (secret)   .p12 password"
+            echo "      APPLE_ID                    (secret)   Apple ID email"
+            echo "      APPLE_APP_SPECIFIC_PASSWORD (secret)   App-specific password"
+            echo "      APPLE_TEAM_ID               (secret)   Apple Developer Team ID"
             echo ""
             echo "  Full guide: docs/CODE-SIGNING.md"
             echo "═══════════════════════════════════════════════════════════════════"
