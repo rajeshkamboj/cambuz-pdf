@@ -266,6 +266,7 @@ export function extractReleaseMetadata(release, options = {}) {
     tag,
     version,
     prerelease: Boolean(release.prerelease) || tag.includes('-'),
+    signed: Boolean(options.signed),
     releaseUrl,
     shortSha,
     commitSha: commitSha || null,
@@ -292,6 +293,7 @@ export function renderBadgeSection(meta) {
 
 export function renderDownloadsSection(meta) {
   const { assets, tag, version, repo, shortSha, runId } = meta;
+  const isSigned = meta.signed === true;
   const releaseKind = meta.prerelease ? 'pre-release' : 'release';
 
   let provenanceLine;
@@ -307,11 +309,16 @@ export function renderDownloadsSection(meta) {
     provenanceLine = `Every file is built in CI (all five platform artifacts verified) and attached to the [${tag} ${releaseKind}][release-page].`;
   }
 
+  const signingNotice = isSigned
+    ? '> All platform builds are **code-signed** (Windows Authenticode + macOS Developer ID & notarization).\n> A manual acceptance pass on real hardware still gates a full stable release.'
+    : '> Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.\n> A manual acceptance pass on real hardware still gates a full stable release.';
+
+  const macDmgNote = isSigned ? 'Signed & notarized; drag to Applications' : 'Drag-to-Applications disk image; unsigned and not notarized';
+
   return `> **How downloads work right now:** version **${version}** is published as the
 > **[${tag} ${releaseKind}][release-page]**, so the links below are permanent
 > release-asset links — no GitHub account needed and no 30-day CI expiry.
-> Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.
-> A manual acceptance pass on real hardware still gates a full stable release.
+${signingNotice}
 
 ${provenanceLine}
 
@@ -320,7 +327,7 @@ ${provenanceLine}
 | **Windows 10/11 · x64** *(recommended)* | \`${assets.winSetup.name}\` — NSIS installer | Normal install: pick a folder, Start Menu entry, optional \`.pdf\` association. Per-user, no admin rights. | ${assets.winSetup.sizeFormatted} | **[Download installer][win-setup-dl]** |
 | Windows 10/11 · x64 | \`${assets.winPortable.name}\` | No install at all — run from Desktop, Downloads or a USB stick (it extracts itself at launch) | ${assets.winPortable.sizeFormatted} | **[Download portable][win-portable-dl]** |
 | Linux x64 *(experimental)* | \`${assets.linuxAppImage.name}\` | Try Cambuz on Linux; single-file AppImage | ${assets.linuxAppImage.sizeFormatted} | **[Download AppImage][linux-dl]** |
-| macOS 13+ · Apple Silicon *(experimental)* | \`${assets.macDmg.name}\` | Drag-to-Applications disk image; unsigned and not notarized | ${assets.macDmg.sizeFormatted} | **[Download DMG][mac-dmg-dl]** |
+| macOS 13+ · Apple Silicon *(experimental)* | \`${assets.macDmg.name}\` | ${macDmgNote} | ${assets.macDmg.sizeFormatted} | **[Download DMG][mac-dmg-dl]** |
 | macOS 13+ · Apple Silicon *(experimental)* | \`${assets.macZip.name}\` | Same app bundle as a plain ZIP | ${assets.macZip.sizeFormatted} | **[Download ZIP][mac-zip-dl]** |
 | Windows arm64, Intel Mac, Linux arm64 | — | Not built | — | *unavailable* |
 
@@ -343,8 +350,11 @@ release links above do not).
 | \`${assets.macZip.name}\` | \`${assets.macZip.sha256}\` |
 
 Verify after download: \`Get-FileHash -Algorithm SHA256 <file>\` (PowerShell) or
-\`sha256sum -c SHA256SUMS.txt\` (Linux/macOS, next to the downloaded files). The builds are
-unsigned, so the checksum is how you confirm a file is the one CI produced.
+\`sha256sum -c SHA256SUMS.txt\` (Linux/macOS, next to the downloaded files). ${
+  isSigned
+    ? 'Windows executables and macOS app bundles are code-signed; you can verify the signature with the OS or check the SHA-256 hash against the table below.'
+    : 'The builds are unsigned, so the checksum is how you confirm a file is the one CI produced.'
+}
 
 </details>
 
@@ -533,6 +543,7 @@ export async function syncReleaseReadme(options = {}) {
     packageVersion: pkg.version,
     sha,
     runId,
+    signed: options.signed === true,
   });
 
   const currentReadme = fs.readFileSync(readmePath, 'utf8');
@@ -574,6 +585,8 @@ function parseCliArgs(argv) {
       out.dryRun = true;
     } else if (arg === '--allow-downgrade') {
       out.allowDowngrade = true;
+    } else if (arg === '--signed') {
+      out.signed = true;
     } else {
       throw new Error(`Unknown or incomplete argument: ${arg}`);
     }

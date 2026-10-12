@@ -1,6 +1,8 @@
 # Cambuz PDF Reader — Development Notes & History
 
 > **Looking for the product page and downloads? See [README.md](README.md).**
+> **Release policy, pipeline, and code-signing? See [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md)
+> and [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).**
 > This document preserves the phase-by-phase development record that previously
 > filled the root README: implementation status per phase, CI evidence, benchmark
 > tables, packaging internals, test methodology and historical blocker lists.

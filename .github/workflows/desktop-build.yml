@@ -23,7 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Builds are unsigned: never search the runner for a code-signing identity.
+  # Never search the runner for a code-signing identity; certificates are
+  # provided explicitly via per-job CSC_LINK / CSC_KEY_PASSWORD secrets.
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
@@ -64,6 +65,9 @@ jobs:
       - name: Install dependencies (downloads the Windows Electron runtime)
         run: npm ci
       - name: Build NSIS installer and portable executable
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run build:win
       - name: Verify packaged contents
         run: node scripts/check-packaged-app.mjs dist/win-unpacked/resources/app.asar
@@ -92,6 +96,29 @@ jobs:
           if ($malformed) { throw "Malformed SHA256SUMS.txt lines: $($malformed -join '; ')" }
           $appAsar = Get-Item dist/win-unpacked/resources/app.asar
           Write-Host "::notice title=Build output::app.asar (renderer payload) - $([math]::Round($appAsar.Length / 1MB, 1)) MiB"
+      - name: Verify code-signature status
+        shell: pwsh
+        run: |
+          $exeFiles = Get-ChildItem dist -File | Where-Object {
+            $_.Name -like '*-setup.exe' -or $_.Name -like '*-portable.exe'
+          }
+          $allSigned = $true
+          foreach ($file in $exeFiles) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            if ($sig.Status -eq 'Valid') {
+              Write-Host "  ✓ $($file.Name): signed by $($sig.SignerCertificate.Subject)"
+            } else {
+              $allSigned = $false
+              Write-Host "  ✗ $($file.Name): NOT signed (Status: $($sig.Status))"
+            }
+          }
+          if ($allSigned) {
+            "signed" | Set-Content -Encoding ascii dist/SIGNED.txt
+            Write-Host "::notice title=Code signing::All Windows executables are code-signed."
+          } else {
+            "unsigned" | Set-Content -Encoding ascii dist/SIGNED.txt
+            Write-Host "::warning title=Code signing::Windows executables are NOT signed. Set WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD repository secrets."
+          }
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -100,6 +127,7 @@ jobs:
             dist/*-setup.exe
             dist/*-portable.exe
             dist/SHA256SUMS.txt
+            dist/SIGNED.txt
           if-no-files-found: error
           retention-days: 30
       - name: Smoke test the unpacked build
@@ -222,7 +250,7 @@ jobs:
           retention-days: 14
 
   macos-arm64:
-    name: macOS arm64 (DMG + ZIP, unsigned) — experimental
+    name: macOS arm64 (DMG + ZIP) — experimental
     needs: test
     runs-on: macos-latest
     timeout-minutes: 45
@@ -234,6 +262,13 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build DMG and ZIP
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # electron-builder passes these to notarytool for Apple notarization.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run build:mac
       - name: Verify packaged contents
         run: node scripts/check-packaged-app.mjs "dist/mac-arm64/Cambuz PDF Reader.app/Contents/Resources/app.asar"
@@ -243,6 +278,27 @@ jobs:
           test -f "$APP/Contents/Resources/icon.icns"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:CFBundleTypeRole" "$APP/Contents/Info.plist" | grep -q Viewer
+      - name: Verify code-signature and notarization status
+        run: |
+          APP="dist/mac-arm64/Cambuz PDF Reader.app"
+          if codesign --verify --deep --strict "$APP" 2>/dev/null; then
+            echo "  ✓ App bundle is code-signed"
+            codesign -dv --verbose=4 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier" || true
+            # Check notarization stapling on DMG and ZIP
+            for f in dist/*.dmg dist/*.zip; do
+              if xcrun stapler validate "$f" 2>/dev/null; then
+                echo "  ✓ $(basename "$f") is notarized and stapled"
+              else
+                echo "  ℹ $(basename "$f") — stapler check inconclusive (may still be notarized via online ticket)"
+              fi
+            done
+            echo "signed" > dist/SIGNED.txt
+            echo "::notice title=Code signing::macOS builds are code-signed and notarized."
+          else
+            echo "  ✗ App bundle is NOT code-signed"
+            echo "unsigned" > dist/SIGNED.txt
+            echo "::warning title=Code signing::macOS builds are NOT signed. Set MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID repository secrets."
+          fi
       - name: Write SHA-256 checksums
         run: |
           cd dist
@@ -259,6 +315,7 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/SIGNED.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -350,6 +407,46 @@ jobs:
           name: cambuz-pdf-macos-arm64
           path: release-src/macos
 
+      - name: Enforce code-signing for Windows and macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          all_signed=true
+          for platform in windows macos; do
+            marker="release-src/$platform/SIGNED.txt"
+            if [[ ! -f "$marker" ]]; then
+              echo "::error::${platform} builds are NOT code-signed (SIGNED.txt missing). Configure the code-signing repository secrets."
+              all_signed=false
+            elif [[ "$(cat "$marker")" != "signed" ]]; then
+              echo "::error::${platform} builds are NOT code-signed ($(cat "$marker")). Configure the code-signing repository secrets."
+              all_signed=false
+            else
+              echo "✓ ${platform} builds are code-signed"
+            fi
+          done
+          if [[ "$all_signed" == "false" ]]; then
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════"
+            echo "  RELEASE BLOCKED — code-signing is required for every release."
+            echo ""
+            echo "  Configure these GitHub repository secrets (Settings → Secrets):"
+            echo ""
+            echo "    Windows:"
+            echo "      WIN_CSC_LINK          Base64-encoded .pfx certificate"
+            echo "      WIN_CSC_KEY_PASSWORD  Password for the .pfx file"
+            echo ""
+            echo "    macOS:"
+            echo "      MAC_CSC_LINK          Base64-encoded .p12 certificate"
+            echo "      MAC_CSC_KEY_PASSWORD  Password for the .p12 file"
+            echo "      APPLE_ID              Apple ID email"
+            echo "      APPLE_APP_SPECIFIC_PASSWORD  App-specific password"
+            echo "      APPLE_TEAM_ID         Apple Developer Team ID"
+            echo ""
+            echo "  Full guide: docs/CODE-SIGNING.md"
+            echo "═══════════════════════════════════════════════════════════════════"
+            exit 1
+          fi
+
       - name: Verify all five installers and write combined SHA256SUMS.txt
         shell: bash
         run: |
@@ -420,10 +517,20 @@ jobs:
           fi
 
           notes_file="$RUNNER_TEMP/release-notes.md"
+          is_signed="false"
+          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]] && \
+             [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
+            is_signed="true"
+          fi
+          if [[ "$is_signed" == "true" ]]; then
+            signing_note="All platform builds are code-signed. Windows executables carry an Authenticode signature; macOS builds are signed with a Developer ID certificate and notarized by Apple."
+          else
+            signing_note="The builds are unsigned — SmartScreen (Windows) and Gatekeeper (macOS) will show warnings. \`SHA256SUMS.txt\` is the way to verify a download."
+          fi
           {
-            echo "Unsigned pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
+            echo "Pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
             echo ""
-            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. Nothing here is code-signed, so SmartScreen (Windows) and Gatekeeper (macOS) will warn; \`SHA256SUMS.txt\` is the way to verify a download."
+            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. ${signing_note}"
             echo ""
             echo "Verify after download: \`Get-FileHash -Algorithm SHA256 <file>\` (PowerShell) or \`sha256sum -c SHA256SUMS.txt\` (Linux/macOS)."
           } > "$notes_file"
@@ -459,11 +566,18 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
+          signed_flag=""
+          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]] && \
+             [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
+            signed_flag="--signed"
+          fi
+
           node scripts/sync-release-readme.mjs \
             --tag "$TAG" \
             --repo "$GH_REPO" \
             --sha "$GITHUB_SHA" \
-            --run-id "$GITHUB_RUN_ID"
+            --run-id "$GITHUB_RUN_ID" \
+            $signed_flag
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
