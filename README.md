@@ -11,8 +11,10 @@
 
 <p align="center">
   <a href="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml"><img src="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml/badge.svg?branch=main" alt="Desktop builds status (main)" /></a>
+  <!-- release-sync:badge:start -->
   <a href="https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1"><img src="https://img.shields.io/badge/download-v1.1.0--rc1-success" alt="Download v1.1.0-rc1" /></a>
   <img src="https://img.shields.io/badge/version-1.1.0--pre--release-informational" alt="Version 1.1.0 pre-release" />
+  <!-- release-sync:badge:end -->
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Windows%20x64-primary-0078D6" alt="Windows x64 (primary target)" />
   <img src="https://img.shields.io/badge/Linux%20x64-experimental-orange" alt="Linux x64 (experimental)" />
@@ -30,12 +32,12 @@
 
 ## ⬇️ Download Cambuz
 
+<!-- release-sync:downloads:start -->
 > **How downloads work right now:** version **1.1.0** is published as the
 > **[v1.1.0-rc1 pre-release][release-page]**, so the links below are permanent
 > release-asset links — no GitHub account needed and no 30-day CI expiry.
-> The builds are **unsigned**: expect SmartScreen and Gatekeeper warnings.
-> The `-rc1` suffix means a person has not yet run the manual acceptance pass on real
-> hardware; when that passes, the same files are promoted to a full release.
+> Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.
+> A manual acceptance pass on real hardware still gates a full stable release.
 
 Every file is built from commit `7dcf557` in
 [CI run 38156402210](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/38156402210)
@@ -53,8 +55,9 @@ Every file is built from commit `7dcf557` in
 All five files, plus [`SHA256SUMS.txt`][sums-dl], are listed on the
 [v1.1.0-rc1 pre-release page][release-page]. Want a build of a newer commit? The
 [Desktop builds workflow](https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml)
-uploads the same files as CI artifacts on every push to `main` (those need a signed-in
-GitHub account and expire after 30 days; the release links above do not).
+publishes a new pinned pre-release on every successful push to `main` and also uploads
+CI artifacts (CI artifacts need a signed-in GitHub account and expire after 30 days; the
+release links above do not).
 
 <details>
 <summary><strong>SHA-256 checksums for the v1.1.0-rc1 files</strong> (published as <code>SHA256SUMS.txt</code> on the release)</summary>
@@ -76,6 +79,7 @@ unsigned, so the checksum is how you confirm a file is the one CI produced.
 **At a glance:** version 1.1.0 (pre-release) · app ID `com.cambuz.pdfreader` · publisher
 Cambuz · MIT licence with [third-party notices](THIRD-PARTY-NOTICES.md) · no telemetry ·
 works fully offline after download · Electron 44 runtime (most of the installer size).
+<!-- release-sync:downloads:end -->
 
 ## What Cambuz does
 
@@ -348,9 +352,35 @@ The reading feature set was audited against mainstream readers — what exists, 
 missing and in what order it is worth closing:
 [feature audit](docs/FEATURE-AUDIT.md).
 
+### Feature-copy manifest & landing-site synchronization
+
+- **Reviewed feature manifest ([`docs/landing-content.json`](docs/landing-content.json)):**
+  This file is the source of truth for the feature copy consumed by
+  `rajeshkamboj/cambuz-landing`. **Every feature PR that changes user-visible behavior must
+  update `docs/landing-content.json` alongside the `README.md` copy and tests.** Validate it
+  locally (and in CI) with:
+  ```bash
+  node scripts/validate-landing-content.mjs
+  ```
+- **Automatic pre-release publishing & README sync:**
+  On every successful push/merge to `main`, `.github/workflows/desktop-build.yml` requires
+  all five platform installers (`*-win-x64-setup.exe`, `*-win-x64-portable.exe`,
+  `*-linux-x86_64.AppImage`, `*-mac-arm64.dmg`, `*-mac-arm64.zip`), publishes a pinned
+  GitHub pre-release named `v<package.json version>-build.<github run number>` pointing at
+  the exact tested `GITHUB_SHA`, rewrites the marked `release-sync` blocks in `README.md`
+  via `scripts/sync-release-readme.mjs`, commits the `README.md` update back to `main`
+  (`paths-ignore: '**.md'` prevents a workflow loop), and dispatches a
+  `cambuz-release-published` event to `rajeshkamboj/cambuz-landing`.
+- **One-time secret setup (`CAMBUZ_LANDING_DISPATCH_TOKEN`):**
+  1. Create a fine-grained GitHub Personal Access Token (PAT) limited to
+     `rajeshkamboj/cambuz-landing`.
+  2. Grant only **Contents: Read and write** repository permissions.
+  3. Save it in `rajeshkamboj/cambuz-pdf` Actions secrets as
+     `CAMBUZ_LANDING_DISPATCH_TOKEN`. (If the secret is not set, the workflow logs a warning
+     and exits cleanly; the landing site has an hourly repair sync as fallback.)
+
 Contributions are welcome — please open an issue first for anything beyond a small fix,
-and keep changes covered by `npm test`. No new release or signing automation is produced
-by this documentation; publishing is a maintainer decision tracked in DEVELOPMENT.md.
+and keep changes covered by `npm test`.
 
 ## 🧭 About Us
 
@@ -371,6 +401,7 @@ with bundled third-party components listed with full license texts in
   [1.1.0 pre-release notes](docs/RELEASE-NOTES-1.1.0.md) ·
   [Windows acceptance checklist](docs/WINDOWS-ACCEPTANCE-CHECKLIST.md)
 
+<!-- release-sync:links:start -->
 [release-page]: https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-rc1
 [win-setup-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe
 [win-portable-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe
@@ -378,3 +409,4 @@ with bundled third-party components listed with full license texts in
 [mac-dmg-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg
 [mac-zip-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/Cambuz-PDF-Reader-1.1.0-mac-arm64.zip
 [sums-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-rc1/SHA256SUMS.txt
+<!-- release-sync:links:end -->
