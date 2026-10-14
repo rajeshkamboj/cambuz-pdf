@@ -128,10 +128,13 @@ exercised on GitHub runners against the *packaged* app — see
   so the preview is what you get: page selection with validated ranges, 1–99 copies,
   portrait/landscape, A4/A3/A5/Letter/Legal/Tabloid, five margin presets plus custom
   (0–50 mm), fit/actual/custom scaling, and 2-up / 4-up sheets.
-- Choose one-sided or two-sided printing (flip on the long or short edge), plus
-  collated or uncollated copies. Direct printing sends these choices to Electron's
-  native print API; duplex requires a duplex-capable printer. In the system print
-  dialog, verify the driver's two-sided and collation settings before confirming.
+- Choose one-sided or two-sided printing, plus collated or uncollated copies.
+  *Automatic* two-sided sends the choice to Electron's native print API and needs a
+  printer with a duplex unit. *Manual* two-sided works on printers without one (for
+  example the HP LaserJet 1020 Plus): Cambuz prints the odd pages first, then asks you
+  to reload the printed stack and prints the even pages in reverse order. Manual
+  two-sided prints one copy at a time. Direct printing to a named printer does not
+  open a dialog; in the system print dialog, verify the driver's settings first.
 - Ink Saver preset: grayscale raster output (capped at 200 dpi) to save toner.
 - On Windows, Cambuz lists system printers via Electron and can fall back to the native
   print dialog. Browser mode cannot set printer options: choose duplex, copies and

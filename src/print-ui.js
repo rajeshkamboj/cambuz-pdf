@@ -6,9 +6,12 @@ import {
   PAPER_SIZES,
   PRINT_DEFAULTS,
   buildPrintPdf,
+  describeDuplexMode,
   getPaperDimensions,
   grayscaleRgbaInPlace,
+  isManualDuplexMode,
   normalizePrintSettings,
+  splitSheetsForManualDuplex,
   summarizePrintJob,
 } from './printing.js';
 
@@ -110,6 +113,10 @@ export class PrintController {
       previewCanvas: element('print-preview-canvas'),
       previewCaption: element('print-preview-caption'),
       status: element('print-status'),
+      manualPanel: element('print-manual-panel'),
+      manualText: element('print-manual-text'),
+      manualContinue: element('btn-print-manual-continue'),
+      manualCancel: element('btn-print-manual-cancel'),
     };
 
     this.opened = false;
@@ -126,6 +133,9 @@ export class PrintController {
     this.latestPreviewKey = '';
     this.browserPrintUrls = new Set();
     this.submitting = false;
+    // Manual two-sided printing: the even-page pass waiting for the user to
+    // reload the printed stack. Null when no second pass is pending.
+    this.manualJob = null;
     this.resizeTimer = null;
 
     this.bindEvents();
@@ -145,6 +155,8 @@ export class PrintController {
     this.ui.submitButton.addEventListener('click', () => this.print(false));
     this.ui.currentButton.addEventListener('click', () => this.print(true));
     this.ui.downloadButton.addEventListener('click', () => this.downloadPdf());
+    this.ui.manualContinue.addEventListener('click', () => this.continueManualDuplex());
+    this.ui.manualCancel.addEventListener('click', () => this.cancelManualDuplex());
     this.ui.refreshPrinters.addEventListener('click', () => this.refreshPrinters());
     this.ui.previewPrevious.addEventListener('click', () => this.showPreviewPage(this.previewPageNumber - 1));
     this.ui.previewNext.addEventListener('click', () => this.showPreviewPage(this.previewPageNumber + 1));
@@ -222,6 +234,7 @@ export class PrintController {
   close(restoreFocus = true) {
     const wasOpen = this.opened;
     this.opened = false;
+    this.clearManualJob();
     this.previewBuildVersion += 1;
     clearTimeout(this.previewBuildTimer);
     this.ui.dialog.style.display = 'none';
@@ -344,6 +357,11 @@ export class PrintController {
       this.ui.settingsError.textContent = error.message;
       return { valid: false, error };
     }
+    if (isManualDuplexMode(normalized.duplexMode) && Number(normalized.copies) > 1) {
+      const error = new Error('Manual two-sided printing prints one copy at a time. Set copies to 1, or print the copies separately.');
+      this.ui.settingsError.textContent = error.message;
+      return { valid: false, error };
+    }
     try {
       const summary = summarizePrintJob(normalized, this.getTotalPages(), this.getCurrentPage());
       return { valid: true, settings: normalized, summary };
@@ -371,7 +389,7 @@ export class PrintController {
       `${settings.pagesPerSheet} page${settings.pagesPerSheet === 1 ? '' : 's'} per sheet · ` +
       `${settings.scaling === 'fit' ? 'Fit to printable area' : settings.scaling === 'actual' ? 'Actual size' : `${settings.customScale}% scale`}` +
       `${settings.inkSaver ? ' · Ink Saver grayscale' : ''}` +
-      ` · ${settings.duplexMode === 'simplex' ? 'one-sided' : settings.duplexMode === 'longEdge' ? 'two-sided, long edge' : 'two-sided, short edge'}` +
+      ` · ${describeDuplexMode(settings.duplexMode)}` +
       `${summary.copies > 1 ? settings.collate ? ' · collated' : ' · uncollated' : ''}`;
   }
 
@@ -381,8 +399,8 @@ export class PrintController {
     this.updateSummary(settings, validation.valid ? validation.summary : null);
     const previewReady = validation.valid && this.latestPdfBytes &&
       this.latestPreviewKey === this.previewKey(validation.settings);
-    this.ui.submitButton.disabled = !previewReady || this.submitting;
-    this.ui.currentButton.disabled = !this.getDoc() || this.submitting;
+    this.ui.submitButton.disabled = !previewReady || this.submitting || Boolean(this.manualJob);
+    this.ui.currentButton.disabled = !this.getDoc() || this.submitting || Boolean(this.manualJob);
     this.ui.downloadButton.disabled = !this.latestPdfBytes;
   }
 
@@ -667,7 +685,7 @@ export class PrintController {
   }
 
   async print(forceCurrentPage) {
-    if (!this.opened || this.submitting) return;
+    if (!this.opened || this.submitting || this.manualJob) return;
     if (forceCurrentPage) {
       clearTimeout(this.previewBuildTimer);
       for (const radio of this.ui.pageModes) radio.checked = radio.value === 'current';
@@ -706,7 +724,7 @@ export class PrintController {
       const api = window.cambuzAPI;
       if (api?.printPdf) {
         const paper = getPaperDimensions(validation.settings);
-        const nativeResult = await api.printPdf(result.bytes, {
+        const jobOptions = {
           deviceName: this.ui.printer.value || '',
           copies: current.settings.copies,
           collate: current.settings.collate,
@@ -715,12 +733,18 @@ export class PrintController {
           orientation: validation.settings.orientation,
           widthMm: paper.widthMm,
           heightMm: paper.heightMm,
-        });
-        if (!nativeResult?.ok) throw new Error(nativeResult?.error || 'The operating system could not start the print job.');
-        const destination = nativeResult.printerName || this.ui.printer.value || 'selected printer';
-        this.setStatus(`Print job sent to ${destination}.${current.settings.duplexMode === 'simplex' ? '' : ' Two-sided output depends on printer/driver support.'}`, false);
-        this.onStatus(`Print job sent to ${destination}`);
+        };
+        if (isManualDuplexMode(current.settings.duplexMode)) {
+          await this.startManualDuplex(api, result.bytes, jobOptions);
+        } else {
+          const destination = await this.sendNativeJob(api, result.bytes, jobOptions);
+          this.setStatus(`Print job sent to ${destination}.${current.settings.duplexMode === 'simplex' ? '' : ' Two-sided output depends on printer/driver support.'}`, false);
+          this.onStatus(`Print job sent to ${destination}`);
+        }
       } else {
+        if (isManualDuplexMode(current.settings.duplexMode)) {
+          throw new Error('Manual two-sided printing needs the Cambuz desktop app. Choose one-sided here, or print in the browser dialog yourself.');
+        }
         this.openBrowserPrint(result.bytes);
       }
     } catch (error) {
@@ -731,6 +755,86 @@ export class PrintController {
       this.ui.submitLabel.textContent = 'Print';
       this.updateActionState();
     }
+  }
+
+  /** Send one native job and resolve with the destination name. Throws on failure. */
+  async sendNativeJob(api, bytes, jobOptions) {
+    const nativeResult = await api.printPdf(bytes, jobOptions);
+    if (!nativeResult?.ok) throw new Error(nativeResult?.error || 'The operating system could not start the print job.');
+    return nativeResult.printerName || jobOptions.deviceName || 'selected printer';
+  }
+
+  /**
+   * Manual two-sided: send the odd sheets now as a one-sided job, then keep the
+   * even sheets (already in reverse order) until the user has reloaded the stack.
+   */
+  async startManualDuplex(api, bytes, jobOptions) {
+    const split = await splitSheetsForManualDuplex(bytes);
+    const passOptions = { ...jobOptions, copies: 1, collate: true, duplexMode: 'simplex' };
+    const destination = await this.sendNativeJob(api, split.frontBytes, passOptions);
+    if (split.backCount === 0) {
+      this.setStatus(`Print job sent to ${destination}. The document fits on one side, so no second pass is needed.`, false);
+      this.onStatus(`Print job sent to ${destination}`);
+      return;
+    }
+    this.manualJob = {
+      backBytes: split.backBytes,
+      options: passOptions,
+      destination,
+      frontCount: split.frontCount,
+      backCount: split.backCount,
+    };
+    this.showManualPanel();
+    this.setStatus(`Side one sent to ${destination}. When it has finished, reload the printed stack and press “Print second side”.`, false);
+    this.onStatus(`Side one sent to ${destination}`);
+  }
+
+  showManualPanel() {
+    const job = this.manualJob;
+    if (!job) return;
+    this.ui.manualText.textContent =
+      `Side one printed ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. Put the stack back into the tray ` +
+      `printed side down, in the same order it came out, then press “Print second side”. ` +
+      `If the back pages come out upside down or out of order, skip this step and test with 3 pages first.`;
+    this.ui.manualPanel.hidden = false;
+    this.ui.manualContinue.disabled = false;
+    this.ui.manualCancel.disabled = false;
+  }
+
+  clearManualJob() {
+    this.manualJob = null;
+    if (this.ui?.manualPanel) this.ui.manualPanel.hidden = true;
+  }
+
+  async continueManualDuplex() {
+    const job = this.manualJob;
+    if (!job || this.submitting) return;
+    const api = window.cambuzAPI;
+    this.submitting = true;
+    this.ui.manualContinue.disabled = true;
+    this.ui.manualCancel.disabled = true;
+    this.setStatus('Sending side two…');
+    try {
+      const destination = await this.sendNativeJob(api, job.backBytes, job.options);
+      this.clearManualJob();
+      this.setStatus(`Side two sent to ${destination}. Check the sheet order on the printed output.`, false);
+      this.onStatus(`Side two sent to ${destination}`);
+    } catch (error) {
+      console.error('Printing side two failed:', error);
+      this.setStatus(`Side two failed: ${error.message}. Press “Print second side” to try again, or skip it.`, true);
+    } finally {
+      this.submitting = false;
+      this.ui.manualContinue.disabled = false;
+      this.ui.manualCancel.disabled = false;
+      this.updateActionState();
+    }
+  }
+
+  cancelManualDuplex() {
+    if (this.submitting || !this.manualJob) return;
+    this.clearManualJob();
+    this.setStatus('Side two skipped. Only the odd pages were printed.', false);
+    this.updateActionState();
   }
 
   openBrowserPrint(bytes) {

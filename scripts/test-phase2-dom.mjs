@@ -127,6 +127,54 @@ printController.applySettingsToForm({ ...validPrintForm.settings, duplexMode: 's
 assert(printController.readSettings().duplexMode === 'shortEdge' && !printController.readSettings().collate, 'two-sided and collation controls round-trip through the form');
 assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'longEdge', collate: false, copies: 3 }) ===
   printController.previewKey(validPrintForm.settings), 'native job choices do not regenerate the preview PDF');
+// Manual two-sided (no duplex unit): odd sheets first, even sheets after a reload.
+{
+  const { PDFDocument } = await import('pdf-lib');
+  const threePages = await PDFDocument.create();
+  for (let i = 0; i < 3; i += 1) threePages.addPage([210, 297]);
+  const composedBytes = await threePages.save();
+  const pageCountOf = async (bytes) => (await PDFDocument.load(bytes)).getPageCount();
+  const calls = [];
+  const fakeApi = {
+    printPdf: async (bytes, options) => {
+      calls.push({ pages: await pageCountOf(bytes), options });
+      return { ok: true, printerName: 'HP LaserJet 1020' };
+    },
+  };
+  globalThis.window.cambuzAPI = fakeApi;
+  const manualBase = {
+    deviceName: 'HP LaserJet 1020', copies: 1, collate: true, duplexMode: 'manual',
+    paperSize: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297,
+  };
+
+  const copiesForm = printController.validateSettings({ ...printController.readSettings(), duplexMode: 'manual', copies: '2' });
+  assert(!copiesForm.valid && document.getElementById('print-settings-error').textContent.includes('one copy at a time'),
+    'manual two-sided is limited to one copy with a clear message');
+
+  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
+  assert(calls.length === 1 && calls[0].pages === 2 && calls[0].options.duplexMode === 'simplex',
+    'manual pass 1 sends the odd sheets (2 of 3) as a one-sided job');
+  assert(printController.manualJob && printController.manualJob.backCount === 1,
+    'manual pass 2 (one even sheet) is held until the user confirms');
+  assert(!document.getElementById('print-manual-panel').hidden, 'manual panel asks the user to reload the stack');
+  assert(printController.ui.submitButton.disabled, 'submit is disabled while the second side is pending');
+
+  await printController.continueManualDuplex();
+  assert(calls.length === 2 && calls[1].pages === 1 && calls[1].options.duplexMode === 'simplex',
+    'manual pass 2 sends the even sheet as a one-sided job');
+  assert(printController.manualJob === null && document.getElementById('print-manual-panel').hidden,
+    'manual panel closes after side two is sent');
+
+  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
+  printController.cancelManualDuplex();
+  assert(printController.manualJob === null && calls.length === 3,
+    'skipping side two clears the pending job without another print');
+
+  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
+  printController.clearManualJob();
+  delete globalThis.window.cambuzAPI;
+}
+
 const invalidRangeForm = printController.validateSettings({ ...printController.readSettings(), pageMode: 'range', pageRange: '0' });
 assert(!invalidRangeForm.valid && document.getElementById('print-range-error').textContent.includes('between 1 and 5'), 'print dialog shows invalid page-range feedback');
 printController.applySettingsToForm({ ...printController.readSettings(), pageMode: 'all', pageRange: '' });

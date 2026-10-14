@@ -22,7 +22,10 @@ import {
   millimetresToMicrons,
   normalizePrintSettings,
   parsePageRanges,
+  describeDuplexMode,
+  isManualDuplexMode,
   resolvePageSelection,
+  splitSheetsForManualDuplex,
   summarizePrintJob,
 } from '../src/printing.js';
 
@@ -265,6 +268,34 @@ await rejects(
   'Ink Saver rendering is unavailable',
   'Ink Saver fails clearly when no grayscale renderer is available'
 );
+
+console.log('\n## Manual two-sided (no duplex unit)');
+assert(normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'manual' }).duplexMode === 'manual', 'manual two-sided mode is accepted');
+throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'manualLongEdge' }), 'one-sided', 'retired manual mode names are rejected');
+assert(isManualDuplexMode('manual') && !isManualDuplexMode('longEdge') && !isManualDuplexMode('simplex'), 'only the manual mode is sequenced by Cambuz');
+assert(describeDuplexMode('manual') === 'manual two-sided' && describeDuplexMode('longEdge') === 'two-sided, long edge', 'duplex labels are human readable');
+{
+  // Five composed sheets, each a distinct width so the output order is checkable.
+  const composed = await PDFDocument.create();
+  for (let i = 1; i <= 5; i += 1) composed.addPage([100 + i, 200]);
+  const composedBytes = await composed.save();
+  const split = await splitSheetsForManualDuplex(composedBytes);
+  const widthsOf = async (bytes) => {
+    const doc = await PDFDocument.load(bytes);
+    return doc.getPages().map((page) => page.getWidth() - 100);
+  };
+  const front = await widthsOf(split.frontBytes);
+  const back = await widthsOf(split.backBytes);
+  assert(split.frontCount === 3 && split.backCount === 2, 'manual split: 3 front sheets and 2 back sheets for 5 composed pages');
+  assert(JSON.stringify(front) === '[1,3,5]', `manual split: front pass keeps sheets 1,3,5 in order (got ${JSON.stringify(front)})`);
+  assert(JSON.stringify(back) === '[4,2]', `manual split: back pass is sheets 4,2 (reverse order) (got ${JSON.stringify(back)})`);
+}
+{
+  const single = await PDFDocument.create();
+  single.addPage([101, 200]);
+  const split = await splitSheetsForManualDuplex(await single.save());
+  assert(split.frontCount === 1 && split.backCount === 0, 'manual split: a one-sheet job needs no second pass');
+}
 
 console.log('\n==============================');
 console.log(`Phase 3 print tests: ${passed} passed, ${failed} failed`);
