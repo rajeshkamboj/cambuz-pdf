@@ -76,7 +76,7 @@ the default is a one-line change (`DEFAULT_VIEW_MODE` in `src/renderer.js`).
 
 Copy restrictions are honoured app-wide (no bypass), encrypted files are never
 re-saved unprotected, PDF JavaScript actions are not executed, there is no
-auto-updater and no code signing. These are policy decisions, not gaps.
+auto-updater; code-signing is optional, so unsigned releases are supported. These are policy decisions, not gaps.
 
 ---
 

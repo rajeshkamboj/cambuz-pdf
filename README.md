@@ -206,9 +206,9 @@ PDFs in [`samples/`](samples) let you judge the rendering with your own copy of 
 
 1. [Download the installer][win-setup-dl] (`Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe`).
    Check its SHA-256 against the table above.
-2. Run it. If the build is signed with an EV certificate, Windows will not warn;
-   OV-signed builds may show a SmartScreen reputation prompt on first download —
-   choose **More info → Run anyway** (only after the checksum matches).
+2. Run it. Unsigned builds may trigger a SmartScreen warning. Verify the download's
+   SHA-256 first, then choose **More info → Run anyway** if you trust the file. A
+   signature, when available, identifies its publisher but may not remove the warning.
 3. Choose per-user install (no admin prompt) or a custom folder; you get a Start Menu
    shortcut, the MIT licence page, and a `.pdf` "Open with" registration (uninstalling removes both).
 4. Or skip installing entirely: run `…-win-x64-portable.exe` from any folder.
@@ -259,7 +259,7 @@ Honest status of the current build — details and evidence in
 | Area | Where things stand |
 | --- | --- |
 | Release maturity | 1.1.0 is a **pre-release candidate**. Automated acceptance passed on CI runners; a person has not yet run the manual acceptance on real hardware, and that gates a public release. |
-| Code signing | Every release from `main` is code-signed (Windows Authenticode + macOS Developer ID & notarization). The CI release job blocks publication if signing secrets are not configured. See [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md). |
+| Code signing | Optional. If SignPath or Apple signing credentials are unavailable, CI still publishes tested unsigned releases; expect SmartScreen and Gatekeeper warnings. Verify downloads with SHA-256. See [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md). |
 | Linux / macOS validation | Headless/CI-only. The Linux app passed 32/32 packaged checks under Xvfb; the macOS app was built and content-checked but **never launched**. Neither has a human on native hardware yet. |
 | Text extraction fidelity | Some PDFs ship missing or broken ToUnicode mappings or `/ActualText`; text copied from those files may be wrong or empty. Cambuz renders and searches what the file encodes and never substitutes characters. |
 | Scanned PDFs | Render as images only. Selectable/searchable text requires the optional local Tesseract OCR (not bundled). |
@@ -329,10 +329,9 @@ the page (with your own Tesseract), or improve the export settings in the applic
 produced the PDF.
 
 **Why does Windows or macOS warn about the build?**
-Release builds from `main` are code-signed (Windows Authenticode + macOS Developer ID &
-notarization). If you see a warning, verify the SHA-256 of the download against the
-checksum table. Older or CI-artifact builds may be unsigned — only download from the
-[official release page][release-page].
+Code signing is optional for releases. Unsigned Windows or macOS builds may trigger
+SmartScreen or Gatekeeper warnings; if you proceed, verify the SHA-256 against the
+checksum table first. Only download from the [official release page][release-page].
 
 **Can I edit my PDFs?**
 Page-level only: rotate, delete, extract, reorder, merge, split, save-as, duplicate and
