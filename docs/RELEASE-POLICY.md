@@ -32,20 +32,20 @@
                          │
                          ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  4. CI BUILDS + SIGNS + TESTS on main                               │
+  │  4. CI BUILDS + TESTS on main                                       │
   │     • Regression tests                                              │
-  │     • Windows x64: build → sign with Authenticode → verify          │
+  │     • Windows x64: build → try optional SignPath signing            │
   │       → smoke test installer, installed app, portable               │
   │     • Linux x64: build → headless smoke test                        │
-  │     • macOS arm64: build → sign with Developer ID → notarize        │
-  │       → verify signature and stapling                                │
+  │     • macOS arm64: build → optional Developer ID signing            │
+  │       and notarization when credentials are configured               │
   └──────────────────────┬───────────────────────────────────────────────┘
                          │
                          ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  5. RELEASE JOB gates on signing                                    │
-  │     • Checks SIGNED.txt from Windows and macOS builds               │
-  │     • BLOCKS release if either platform is unsigned                  │
+  │  5. RELEASE JOB validates and publishes                             │
+  │     • Verifies all five installers and generates checksums           │
+  │     • Reports signing status; unsigned builds are allowed            │
   │     • Creates/updates pinned GitHub Release                          │
   │       tag: v<version>-build.<run_number>                             │
   │     • Syncs README.md download links (badges, table, checksums)     │
@@ -67,17 +67,21 @@
 ### Every merge to `main` produces a release
 
 There is no manual "release" button. Every successful push to `main` that
-passes all five CI jobs (tests + three platform builds + release) publishes a
-new pinned pre-release automatically. The tag is
+passes the tests, platform builds, smoke checks and release-asset validation
+publishes a new pinned pre-release automatically. The tag is
 `v<package.json version>-build.<GitHub run number>`.
 
-### Every release must be code-signed
+### Code-signing is optional
 
-The release job checks that Windows and macOS binaries carry a valid
-code-signature. If signing is not configured or the signature is missing, the
-release is **blocked** — no unsigned build will ever be published from `main`.
+Windows and macOS signing are attempted only when their credentials are
+configured. Missing credentials, a rejected SignPath application, or an
+unsuccessful optional SignPath request does **not** block publication: the
+workflow retains and publishes the tested unsigned binaries, reports their
+status, and generates SHA-256 checksums. Unsigned downloads can show Windows
+SmartScreen or macOS Gatekeeper warnings. Signing improves publisher
+identification and platform trust; it is not a release prerequisite.
 
-See [CODE-SIGNING.md](CODE-SIGNING.md) for the exact secrets and setup.
+See [CODE-SIGNING.md](CODE-SIGNING.md) for optional signing setup and behavior.
 
 ### Every release must pass all automated tests
 
@@ -89,8 +93,8 @@ The pipeline enforces these quality gates before any binary is published:
 | **Packaged contents** | `check-packaged-app.mjs` | `app.asar` payload ≤ 8 MiB, no leaked dev files, allowlisted dependencies only |
 | **Windows smoke tests** | Three runs (unpacked, installed, portable) | Open PDF, search, sidebar, close, reopen second PDF; silent install + Start Menu + `.pdf` association + uninstall |
 | **Linux smoke test** | Xvfb (headless) | Same as unpacked Windows smoke test |
-| **macOS build checks** | macOS runner | `codesign --verify`, `spctl --assess`, notarization stapling, Info.plist document types, app icon |
-| **Signature enforcement** | Release job | `SIGNED.txt` must say `signed` for both Windows and macOS |
+| **macOS build checks** | macOS runner | Packaged contents, Info.plist document types and app icon; signature/notarization status is recorded when configured |
+| **Signature status** | Build and release jobs | Signing markers and release notes report signed/unsigned status; unsigned binaries do not block publication |
 
 ### `README.md` stays in sync automatically
 
@@ -129,7 +133,10 @@ tags like `v1.1.0-build.53`. When the project is ready for a stable release:
 
 ---
 
-## Required GitHub repository secrets
+## Optional GitHub repository secrets and variables
+
+None of these values are required to build and publish an unsigned release.
+Configure them only if signing or automatic landing-site notifications are desired.
 
 | Name | Type | Platform | Purpose |
 |---|---|---|---|
@@ -144,17 +151,17 @@ tags like `v1.1.0-build.53`. When the project is ready for a stable release:
 | `APPLE_TEAM_ID` | Secret | macOS | Apple Developer Team ID |
 | `CAMBUZ_LANDING_DISPATCH_TOKEN` | Secret | Landing site | Fine-grained PAT for `rajeshkamboj/cambuz-landing` |
 
-Windows signing is **free** via [SignPath Foundation](https://signpath.org/).
-macOS signing requires the Apple Developer Program ($99/yr).
+Windows signing may be available through [SignPath Foundation](https://signpath.org/).
+macOS Developer ID signing and notarization require the Apple Developer Program ($99/yr).
 
-See [CODE-SIGNING.md](CODE-SIGNING.md) for step-by-step setup.
+See [CODE-SIGNING.md](CODE-SIGNING.md) for optional signing setup.
 
 ---
 
 ## What happens when a release is blocked
 
-If the release job fails because code-signing secrets are not configured, the
-build artifacts are still available as **CI artifacts** (valid for 30 days) on
-the workflow run page. These artifacts are unsigned and intended for testing
-only — they are never published as a GitHub Release and never linked from the
-README.
+Signing status alone cannot block a release. A release can still be blocked by
+failed tests or platform builds, failed smoke checks, or missing/invalid release
+assets. The per-platform build artifacts remain available as **CI artifacts**
+(valid for 30 days) on the workflow run page. When those checks pass, unsigned
+binaries are published normally and linked from the README with checksum guidance.

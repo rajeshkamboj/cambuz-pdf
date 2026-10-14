@@ -1,17 +1,18 @@
-# Code-Signing Setup Guide
+# Optional Code-Signing Setup Guide
 
-> **Every release build must be code-signed.** The CI release job will refuse to
-> publish a GitHub Release if the Windows or macOS binaries are not signed. This
-> document walks you through the setup.
+> **Code-signing is optional.** The CI workflow publishes tested unsigned Windows
+> and macOS builds when credentials are not configured or a signing request is
+> rejected or fails. Signing helps identify the publisher and can reduce OS
+> warnings, but it is not required for a GitHub Release.
 
 ---
 
-## Why code-signing is required
+## Why signing helps
 
 | Platform | Without signing | With signing |
 |---|---|---|
-| **Windows** | SmartScreen shows *"Windows protected your PC"* — most users will turn away. | Windows trusts the publisher. No warning on download or first run. |
-| **macOS** | Gatekeeper blocks the app entirely. Users must right-click → Open. | Gatekeeper allows the app. If notarized, no prompt at all. |
+| **Windows** | SmartScreen may show a warning for an unknown publisher; users can check the published SHA-256 and choose **More info → Run anyway**. | Authenticode identifies the publisher. SmartScreen reputation prompts may still appear, especially for a new OV-signed app. |
+| **macOS** | Gatekeeper may block the first launch; users may need to approve opening the app manually. | A Developer ID signature and successful notarization provide the smoothest Gatekeeper experience. |
 
 Linux AppImages are not code-signed in the traditional sense. Integrity is
 verified through SHA-256 checksums instead.
@@ -28,12 +29,15 @@ Foundation"**.
 ### How it works
 
 ```
- CI builds unsigned .exe → uploads to GitHub artifact → SignPath signs
- → signed .exe downloaded → checksums + smoke tests → release published
+ CI builds unsigned .exe → optionally submits to SignPath
+ → signed .exe is used if signing succeeds; otherwise unsigned .exe is kept
+ → checksums + smoke tests → release published either way
 ```
 
 The private key lives on SignPath's hardware security modules — it never
-touches this repository or GitHub secrets.
+touches this repository or GitHub secrets. If SignPath declines an application,
+or a signing request later fails or times out, CI keeps the unsigned files and
+continues through the normal tests and release steps.
 
 ### What you need to do (one-time setup)
 
@@ -89,28 +93,30 @@ Go to **Settings → Secrets and variables → Actions** in the repository:
 
 #### First signed release
 
-Push or merge to `main`. The CI will:
-1. Build the unsigned `.exe` files
-2. Submit them to SignPath for signing
-3. **SignPath will email you** to approve the signing request (within 1 hour)
-4. After approval, the signed files are downloaded and the release is published
-5. Check the download: right-click the `.exe` → Properties → Digital Signatures
-   — it should show **"SignPath Foundation"**
+If SignPath approves the application and all four settings above are present,
+push or merge to `main`. CI will build the unsigned `.exe` files, submit them,
+and use the signed files if SignPath completes the request. Check a signed
+`.exe` by right-clicking it → Properties → Digital Signatures; it should show
+**"SignPath Foundation"**. Once the setup is stable, you can set the signing
+policy to **auto-approve** for tag builds.
 
-Once you're confident, you can set the signing policy to **auto-approve** for
-tag builds.
+### What happens when SignPath is unavailable or rejects the application
 
-### What happens without SignPath secrets
-
-The build jobs still succeed (for PR testing), but the executables will be
-unsigned. The release job will **block publication** with a clear error message.
+Nothing needs to be changed to keep releasing. If the SignPath credentials are
+missing/incomplete, or an optional signing request fails or times out, CI keeps
+the original unsigned Windows installer and portable executable. Provided the
+normal tests, builds and smoke checks pass, the release is still published with
+SHA-256 checksums. Windows may show a SmartScreen warning; verify the checksum
+before choosing **More info → Run anyway**.
 
 ---
 
 ## macOS — Developer ID + notarization ($99/yr)
 
 There is no free program for macOS code signing. Apple requires the Developer
-Program ($99/year) for Developer ID certificates and notarization.
+Program ($99/year) for Developer ID certificates and notarization. These
+credentials are optional: without them, the workflow builds and publishes an
+unsigned app bundle and labels its signing status in the release notes.
 
 ### What you need
 
@@ -151,13 +157,16 @@ base64 -i "Developer ID Application.p12" | tr -d '\n' > mac-csc-link.txt
    submits it to Apple's notarization service via `notarytool`.
 3. After notarization, `electron-builder` staples the ticket to the `.dmg` and
    `.zip`.
-4. A post-build step verifies `codesign --verify --deep --strict` and writes
-   `signed` to `SIGNED.txt`.
-5. The release job gates on `SIGNED.txt`.
+4. A post-build step verifies `codesign --verify --deep --strict` and records
+   `signed` or `unsigned` in `SIGNED.txt`.
+5. The release notes report the status; unsigned builds still publish.
 
 ---
 
-## Full list of secrets & variables
+## Optional secrets & variables
+
+None of these are needed to publish unsigned builds. Configure them only for
+code-signing or the optional landing-site notification.
 
 | Name | Type | Platform | Purpose |
 |---|---|---|---|
@@ -198,8 +207,8 @@ xcrun stapler validate "Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg"
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Release blocked: "SIGNED.txt missing" | Secrets not configured | Add the secrets listed above, then push again |
-| SignPath: "Signing request timed out" | Manual approval not completed | Check your email / SignPath dashboard and approve within 1 hour |
+| Release is unsigned | Signing credentials unavailable, application rejected, or request failed | This is expected and does not block publication; verify the SHA-256 before running |
+| SignPath: "Signing request timed out" | Manual approval not completed | The release continues unsigned; check your email / SignPath dashboard if you want to retry signing |
 | SignPath: "Organization not found" | Wrong `SIGNPATH_ORGANIZATION_ID` | Copy the exact ID from SignPath → Settings |
 | SignPath: "Project not found" | Wrong `SIGNPATH_PROJECT_SLUG` | Must match the project slug in SignPath exactly |
 | macOS: `codesign` error | Certificate password wrong | Re-export the `.p12` and re-encode |

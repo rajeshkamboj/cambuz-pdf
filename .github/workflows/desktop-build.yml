@@ -3,8 +3,9 @@ name: Desktop builds
 # Packages the Electron desktop app, runs packaged smoke tests, and on every
 # successful push to `main` publishes a pinned GitHub pre-release containing all
 # five platform installers, updates the marked download sections in README.md,
-# and notifies rajeshkamboj/cambuz-landing. Pull request runs remain
-# validation-only and never publish a release.
+# and notifies rajeshkamboj/cambuz-landing. Code-signing is optional: if a signing
+# service is unavailable or signing credentials are absent, tested unsigned builds
+# are still published with clear warnings. Pull requests never publish releases.
 
 on:
   push:
@@ -23,8 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Never search the runner for a code-signing identity; certificates are
-  # provided explicitly via per-job CSC_LINK / CSC_KEY_PASSWORD secrets.
+  # Never search the runner for a code-signing identity; signing is only used
+  # when explicitly configured with the repository's signing credentials.
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
@@ -55,7 +56,7 @@ jobs:
     name: Windows x64 (installer + portable)
     needs: test
     runs-on: windows-latest
-    timeout-minutes: 60   # extra headroom for SignPath signing
+    timeout-minutes: 90   # allow a SignPath timeout to fall back to unsigned outputs
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -64,10 +65,9 @@ jobs:
           cache: npm
       - name: Install dependencies (downloads the Windows Electron runtime)
         run: npm ci
-      # electron-builder always builds unsigned here.  SignPath signs the
-      # installer and portable exe after the build.  If SIGNPATH_API_TOKEN is
-      # not configured the executables remain unsigned and the release job
-      # will block the publish.
+      # electron-builder builds the Windows installers first. SignPath signing
+      # is optional; missing credentials or a rejected/failed signing request
+      # leaves these tested executables unsigned, and unsigned releases are allowed.
       - name: Build NSIS installer and portable executable
         run: npm run build:win
       - name: Verify packaged contents
@@ -82,23 +82,29 @@ jobs:
       - name: Prepare OS file-open probe PDFs
         run: node -e "const fs=require('fs');const path=require('path');const dir=path.join(process.env.RUNNER_TEMP,'cambuz-launch');fs.mkdirSync(dir,{recursive:true});const target=path.join(dir,'fichier-été.pdf');fs.copyFileSync('samples/hindi-sample.pdf',target);console.log(target)"
 
-      # ── SignPath Foundation signing (free for open-source) ──────────
+      # ── Optional SignPath Foundation signing (free for open-source) ──
       - name: Check if SignPath signing is configured
         id: signpath-check
         env:
           SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
         shell: bash
         run: |
-          if [[ -n "$SIGNPATH_API_TOKEN" ]]; then
+          if [[ -n "$SIGNPATH_API_TOKEN" && -n "$SIGNPATH_ORGANIZATION_ID" && \
+                -n "$SIGNPATH_PROJECT_SLUG" && -n "$SIGNPATH_SIGNING_POLICY_SLUG" ]]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::SignPath API token found — will submit build for signing."
+            echo "::notice::SignPath settings found — will try optional Windows signing."
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::SIGNPATH_API_TOKEN is not set. Windows executables will be unsigned."
+            echo "::warning::SignPath is not fully configured. Windows executables will remain unsigned; release publication is not blocked."
           fi
 
       - name: Stage unsigned executables for SignPath
+        id: stage-signpath
         if: steps.signpath-check.outputs.configured == 'true'
+        continue-on-error: true
         shell: pwsh
         run: |
           $staging = Join-Path $env:RUNNER_TEMP 'signpath-unsigned'
@@ -112,7 +118,8 @@ jobs:
 
       - name: Upload unsigned executables for SignPath
         id: upload-unsigned
-        if: steps.signpath-check.outputs.configured == 'true'
+        if: steps.signpath-check.outputs.configured == 'true' && steps.stage-signpath.outcome == 'success'
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-windows-exes
@@ -121,7 +128,9 @@ jobs:
           retention-days: 1
 
       - name: Submit to SignPath Foundation for signing
-        if: steps.signpath-check.outputs.configured == 'true'
+        id: submit-signing
+        if: steps.signpath-check.outputs.configured == 'true' && steps.upload-unsigned.outcome == 'success'
+        continue-on-error: true
         uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -134,16 +143,30 @@ jobs:
           wait-for-completion-timeout-in-seconds: 3600
 
       - name: Replace unsigned files with signed versions
-        if: steps.signpath-check.outputs.configured == 'true'
+        if: steps.submit-signing.outcome == 'success'
+        continue-on-error: true
         shell: pwsh
         run: |
           $signedDir = Join-Path $env:RUNNER_TEMP 'signpath-signed'
-          Get-ChildItem $signedDir -File | ForEach-Object {
-            $dest = Join-Path dist $_.Name
-            Copy-Item $_.FullName $dest -Force
-            Write-Host "✓ Replaced $($_.Name) with SignPath-signed version"
+          if (-not (Test-Path $signedDir)) {
+            Write-Warning 'SignPath completed without an output directory; keeping unsigned executables.'
+            exit 0
           }
-      # ── end SignPath ────────────────────────────────────────────────
+          $signedFiles = @(Get-ChildItem $signedDir -File -ErrorAction SilentlyContinue)
+          if ($signedFiles.Count -eq 0) {
+            Write-Warning 'SignPath returned no files; keeping unsigned executables.'
+            exit 0
+          }
+          foreach ($file in $signedFiles) {
+            $dest = Join-Path dist $file.Name
+            Copy-Item $file.FullName $dest -Force
+            Write-Host "✓ Replaced $($file.Name) with SignPath-signed version"
+          }
+
+      - name: Keep unsigned Windows files when SignPath is unavailable
+        if: steps.signpath-check.outputs.configured == 'true' && steps.submit-signing.outcome != 'success'
+        run: echo "::warning::Optional SignPath signing did not complete. Keeping unsigned Windows executables; an unsigned release can still be published."
+      # ── end optional SignPath ───────────────────────────────────────
 
       - name: Write SHA-256 checksums
         shell: pwsh
@@ -472,47 +495,19 @@ jobs:
           name: cambuz-pdf-macos-arm64
           path: release-src/macos
 
-      - name: Enforce code-signing for Windows and macOS
+      - name: Report optional code-signature status
         shell: bash
         run: |
           set -euo pipefail
-          all_signed=true
           for platform in windows macos; do
             marker="release-src/$platform/SIGNED.txt"
-            if [[ ! -f "$marker" ]]; then
-              echo "::error::${platform} builds are NOT code-signed (SIGNED.txt missing). Configure the code-signing repository secrets."
-              all_signed=false
-            elif [[ "$(cat "$marker")" != "signed" ]]; then
-              echo "::error::${platform} builds are NOT code-signed ($(cat "$marker")). Configure the code-signing repository secrets."
-              all_signed=false
+            if [[ -f "$marker" ]] && [[ "$(cat "$marker")" == "signed" ]]; then
+              echo "✓ ${platform} release assets are code-signed"
             else
-              echo "✓ ${platform} builds are code-signed"
+              status="$(cat "$marker" 2>/dev/null || echo missing)"
+              echo "::warning::${platform} release assets are unsigned (${status}); release publication will continue. Verify downloads with SHA256SUMS.txt."
             fi
           done
-          if [[ "$all_signed" == "false" ]]; then
-            echo ""
-            echo "═══════════════════════════════════════════════════════════════════"
-            echo "  RELEASE BLOCKED — code-signing is required for every release."
-            echo ""
-            echo "  Windows (free via SignPath Foundation):"
-            echo "    Apply at https://signpath.org/apply (MIT license, public repo ✓)"
-            echo "    Then add these GitHub secrets/variables:"
-            echo "      SIGNPATH_API_TOKEN          (secret)   CI user token from SignPath"
-            echo "      SIGNPATH_ORGANIZATION_ID    (variable) SignPath organization ID"
-            echo "      SIGNPATH_PROJECT_SLUG       (variable) Project slug"
-            echo "      SIGNPATH_SIGNING_POLICY_SLUG (variable) Signing policy slug"
-            echo ""
-            echo "  macOS ($99/yr Apple Developer Program):"
-            echo "      MAC_CSC_LINK                (secret)   Base64-encoded .p12"
-            echo "      MAC_CSC_KEY_PASSWORD        (secret)   .p12 password"
-            echo "      APPLE_ID                    (secret)   Apple ID email"
-            echo "      APPLE_APP_SPECIFIC_PASSWORD (secret)   App-specific password"
-            echo "      APPLE_TEAM_ID               (secret)   Apple Developer Team ID"
-            echo ""
-            echo "  Full guide: docs/CODE-SIGNING.md"
-            echo "═══════════════════════════════════════════════════════════════════"
-            exit 1
-          fi
 
       - name: Verify all five installers and write combined SHA256SUMS.txt
         shell: bash
@@ -584,15 +579,18 @@ jobs:
           fi
 
           notes_file="$RUNNER_TEMP/release-notes.md"
-          is_signed="false"
-          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]] && \
-             [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
-            is_signed="true"
+          windows_signing="unsigned"
+          macos_signing="unsigned"
+          if [[ -f "release-src/windows/SIGNED.txt" ]] && [[ "$(cat release-src/windows/SIGNED.txt)" == "signed" ]]; then
+            windows_signing="signed"
           fi
-          if [[ "$is_signed" == "true" ]]; then
-            signing_note="All platform builds are code-signed. Windows executables carry an Authenticode signature; macOS builds are signed with a Developer ID certificate and notarized by Apple."
+          if [[ -f "release-src/macos/SIGNED.txt" ]] && [[ "$(cat release-src/macos/SIGNED.txt)" == "signed" ]]; then
+            macos_signing="signed"
+          fi
+          if [[ "$windows_signing" == "signed" && "$macos_signing" == "signed" ]]; then
+            signing_note="Windows executables are Authenticode signed; the macOS app bundle is signed and notarized."
           else
-            signing_note="The builds are unsigned — SmartScreen (Windows) and Gatekeeper (macOS) will show warnings. \`SHA256SUMS.txt\` is the way to verify a download."
+            signing_note="Code-signing status: Windows ${windows_signing}; macOS ${macos_signing}. Unsigned Windows or macOS downloads may show SmartScreen or Gatekeeper warnings. Verify each download with \`SHA256SUMS.txt\`."
           fi
           {
             echo "Pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."

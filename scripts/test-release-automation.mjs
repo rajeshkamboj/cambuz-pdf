@@ -409,6 +409,33 @@ assert(
     workflowDoc.jobs?.['macos-arm64']?.['continue-on-error'] !== true,
   'Linux and macOS build jobs do not mask failures with continue-on-error',
 );
+
+const releaseSteps = workflowDoc.jobs?.release?.steps ?? [];
+const signatureStatusStep = releaseSteps.find((step) => step.name === 'Report optional code-signature status');
+assert(
+  Boolean(signatureStatusStep) &&
+    signatureStatusStep.run.includes('release publication will continue') &&
+    !signatureStatusStep.run.includes('exit 1'),
+  'release job reports unsigned status without failing the release',
+);
+assert(
+  !releaseSteps.some((step) => /Enforce code-signing|RELEASE BLOCKED.*code-signing/i.test(step.name ?? '')),
+  'release job has no mandatory code-signing gate',
+);
+
+const windowsSteps = workflowDoc.jobs?.['windows-x64']?.steps ?? [];
+const signPathSubmitStep = windowsSteps.find((step) => step.id === 'submit-signing');
+assert(
+  Boolean(signPathSubmitStep) && signPathSubmitStep['continue-on-error'] === true,
+  'SignPath request failures are non-blocking',
+);
+const unsignedFallbackStep = windowsSteps.find((step) => step.name === 'Keep unsigned Windows files when SignPath is unavailable');
+assert(
+  Boolean(unsignedFallbackStep) &&
+    unsignedFallbackStep.if.includes("steps.submit-signing.outcome != 'success'") &&
+    unsignedFallbackStep.run.includes('an unsigned release can still be published'),
+  'Windows build keeps unsigned executables when optional SignPath signing fails',
+);
 for (const pattern of [
   '*-win-x64-setup.exe',
   '*-win-x64-portable.exe',
