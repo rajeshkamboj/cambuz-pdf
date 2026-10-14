@@ -438,10 +438,11 @@
             <label for="print-duplex">Print on both sides</label>
             <select id="print-duplex" aria-describedby="print-duplex-help">
               <option value="simplex">Off · one-sided</option>
-              <option value="longEdge">On · flip on long edge (book)</option>
-              <option value="shortEdge">On · flip on short edge (calendar)</option>
+              <option value="longEdge">Automatic · flip on long edge (book)</option>
+              <option value="shortEdge">Automatic · flip on short edge (calendar)</option>
+              <option value="manual">Manual · no duplex unit (two passes, long edge)</option>
             </select>
-            <p id="print-duplex-help" class="print-help">Requires a duplex-capable printer. In the system dialog, check the driver's two-sided setting before printing.</p>
+            <p id="print-duplex-help" class="print-help">Automatic needs a printer with a duplex unit. Manual works on any printer: Cambuz prints the odd pages, then asks you to reload the stack for the even pages.</p>
           </div>
           <label class="print-checkbox-row print-field">
             <input id="print-collate" type="checkbox" checked>
@@ -523,6 +524,13 @@
 
       <footer class="print-dialog-footer">
         <p id="print-status" class="print-status" role="status" aria-live="polite"></p>
+        <div id="print-manual-panel" class="print-manual-panel" hidden>
+          <p id="print-manual-text" class="print-manual-text"></p>
+          <div class="print-dialog-actions">
+            <button id="btn-print-manual-cancel" class="btn-secondary">Skip second side</button>
+            <button id="btn-print-manual-continue" class="btn-primary">Print second side</button>
+          </div>
+        </div>
         <div class="print-dialog-actions">
           <button id="btn-print-download" class="btn-secondary print-download-btn" disabled>Download print-ready PDF</button>
           <button id="btn-print-current" class="btn-secondary" disabled>Print current page</button>

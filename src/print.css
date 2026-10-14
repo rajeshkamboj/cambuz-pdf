@@ -384,3 +384,29 @@
   #print-dialog,
   #app { display: none !important; }
 }
+
+/* Manual two-sided second pass: shown only between the two print jobs. */
+.print-manual-panel {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2, #f5f7fa);
+}
+
+.print-manual-panel[hidden] {
+  display: none;
+}
+
+.print-manual-text {
+  margin: 0;
+  flex: 1 1 320px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}

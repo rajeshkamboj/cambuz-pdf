@@ -38,7 +38,11 @@ export const PRINT_DEFAULTS = Object.freeze({
 const MM_TO_PT = 72 / 25.4;
 const VALID_PAGE_MODES = new Set(['current', 'all', 'range']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
-const VALID_DUPLEX_MODES = new Set(['simplex', 'longEdge', 'shortEdge']);
+// 'simplex' / 'longEdge' / 'shortEdge' ask the printer driver for automatic
+// two-sided output (needs a duplex unit). 'manual' is for printers without a
+// duplex unit: Cambuz prints the odd pages, the user reloads the stack, then
+// Cambuz prints the even pages in reverse order.
+const VALID_DUPLEX_MODES = new Set(['simplex', 'longEdge', 'shortEdge', 'manual']);
 const VALID_SCALING = new Set(['fit', 'actual', 'custom']);
 const VALID_MARGIN_MODES = new Set(['none', 'narrow', 'normal', 'wide', 'custom']);
 const VALID_PAGES_PER_SHEET = new Set([1, 2, 4]);
@@ -127,7 +131,7 @@ export function normalizePrintSettings(input = {}) {
     throw new Error('Choose portrait or landscape orientation.');
   }
   if (!VALID_DUPLEX_MODES.has(settings.duplexMode)) {
-    throw new Error('Choose one-sided, two-sided long-edge, or two-sided short-edge printing.');
+    throw new Error('Choose one-sided, automatic two-sided, or manual two-sided printing.');
   }
   if (typeof settings.collate !== 'boolean') {
     throw new Error('Collate must be on or off.');
@@ -290,6 +294,55 @@ export function calculatePagePlacement(pageWidth, pageHeight, cell, settingsInpu
     height: drawHeight,
     clip: { ...cell },
   };
+}
+
+/** True for two-sided modes that Cambuz itself sequences (no duplex unit needed). */
+export function isManualDuplexMode(mode) {
+  return mode === 'manual';
+}
+
+/** Short label used in the preview caption and status messages. */
+export function describeDuplexMode(mode) {
+  switch (mode) {
+    case 'longEdge': return 'two-sided, long edge';
+    case 'shortEdge': return 'two-sided, short edge';
+    case 'manual': return 'manual two-sided';
+    default: return 'one-sided';
+  }
+}
+
+/**
+ * Split a composed print-ready PDF (one page per physical side, already N-up)
+ * into the two passes needed for manual duplex on a simplex-only printer:
+ *  - front: sheets 1, 3, 5, ... in order (printed first);
+ *  - back:  sheets 2, 4, 6, ... in REVERSE order. A face-down output tray
+ *    returns the first pass with its last page on top, so reloading that stack
+ *    unchanged feeds the matching backs in this order.
+ * An empty back pass means the job fits on one side.
+ */
+export async function splitSheetsForManualDuplex(pdfBytes) {
+  const { PDFDocument } = await import('pdf-lib');
+  const source = await PDFDocument.load(pdfBytes);
+  const count = source.getPageCount();
+  const frontIndices = [];
+  const backIndices = [];
+  for (let i = 0; i < count; i += 2) frontIndices.push(i);
+  for (let i = count - 1; i >= 0; i -= 1) if (i % 2 === 1) backIndices.push(i);
+
+  const build = async (indices) => {
+    const out = await PDFDocument.create();
+    if (indices.length > 0) {
+      const pages = await out.copyPages(source, indices);
+      for (const page of pages) out.addPage(page);
+    }
+    return out.save({ useObjectStreams: true });
+  };
+  return Object.freeze({
+    frontBytes: await build(frontIndices),
+    backBytes: await build(backIndices),
+    frontCount: frontIndices.length,
+    backCount: backIndices.length,
+  });
 }
 
 /**
