@@ -33,9 +33,10 @@
 ## ⬇️ Download Cambuz
 
 <!-- release-sync:downloads:start -->
-> **How downloads work right now:** version **1.1.0** is published as the
-> **[v1.1.0-build.53 pre-release][release-page]**, so the links below are permanent
-> release-asset links — no GitHub account needed and no 30-day CI expiry.
+> **Latest downloadable build:** version **1.1.0** is published as the
+> **[v1.1.0-build.53 pre-release][release-page]**. A newer `build.54` release entry
+> currently has no attached app assets, so the links below point to the latest complete
+> downloadable package set — no GitHub account needed and no 30-day CI expiry.
 > Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.
 > A manual acceptance pass on real hardware still gates a full stable release.
 
@@ -130,18 +131,21 @@ exercised on GitHub runners against the *packaged* app — see
   (0–50 mm), fit/actual/custom scaling, and 2-up / 4-up sheets.
 - Choose one-sided or two-sided printing, plus collated or uncollated copies.
   *Automatic* two-sided sends the choice to Electron's native print API and needs a
-  printer with a duplex unit. *Manual* two-sided works on printers without one (for
-  example the HP LaserJet 1020 Plus): Cambuz prints the odd pages first, then asks you
-  to reload the printed stack and prints the even pages in reverse order. Manual
-  two-sided prints one copy at a time. Direct printing to a named printer does not
-  open a dialog; in the system print dialog, verify the driver's settings first.
+  printer with a duplex unit. *Manual* two-sided works on simplex printers: Cambuz
+  prints the odd pages first, then asks you to reload the stack for the even pages.
+  Feed direction varies by printer. For the HP LaserJet 1018/1020/1022 family, reload
+  printed-side down with the page's bottom edge entering first (rotate the stack 180°
+  without turning it face-up) and keep the sheet order. Manual two-sided prints one
+  copy at a time. Direct printing to a named printer does not open a dialog; in the
+  system print dialog, verify the driver's settings first.
 - Ink Saver preset: grayscale raster output (capped at 200 dpi) to save toner.
 - On Windows, Cambuz lists system printers via Electron and can fall back to the native
   print dialog. Browser mode cannot set printer options: choose duplex, copies and
   collation in the browser/system dialog. The downloadable print-ready PDF contains
   the page selection and layout, **not** printer-only settings such as duplex/copies.
   Print preview, job preparation and native-option forwarding are covered by tests;
-  **no physical printer output has been tested yet** — CI never sent a job to a printer.
+  automated tests do not verify physical output. An initial HP LaserJet 1020 manual-duplex
+  test showed that refeed orientation matters; broader hardware acceptance is still needed.
 
 ### ✂️ Page tools
 

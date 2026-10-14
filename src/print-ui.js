@@ -793,9 +793,10 @@ export class PrintController {
     const job = this.manualJob;
     if (!job) return;
     this.ui.manualText.textContent =
-      `Side one printed ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. Put the stack back into the tray ` +
-      `printed side down, in the same order it came out, then press “Print second side”. ` +
-      `If the back pages come out upside down or out of order, skip this step and test with 3 pages first.`;
+      `Side one printed ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. For HP LaserJet 1018/1020/1022, ` +
+      `reload the stack printed-side down with the page’s bottom edge feeding first: rotate the stack 180° without ` +
+      `turning it face-up, and keep the sheets in the same order. Other printers may need a different feed direction; ` +
+      `check the printer’s manual-duplex guide or test a few pages. Then press “Print second side”.`;
     this.ui.manualPanel.hidden = false;
     this.ui.manualContinue.disabled = false;
     this.ui.manualCancel.disabled = false;
