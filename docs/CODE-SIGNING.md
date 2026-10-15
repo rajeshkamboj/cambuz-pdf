@@ -152,9 +152,17 @@ base64 -i "Developer ID Application.p12" | tr -d '\n' > mac-csc-link.txt
 
 ### How it works in CI
 
-1. The **macOS arm64** build job passes all five secrets to `electron-builder`.
+1. The **macOS arm64** build job exports `MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD`
+   to `electron-builder` as `CSC_LINK` / `CSC_KEY_PASSWORD` **only when
+   `MAC_CSC_LINK` is set**, and only then lets it look for a signing identity
+   (in the temporary keychain it creates from that certificate). Without the
+   secret the job builds an unsigned app, which the release accepts. The
+   secrets are never mapped straight onto `CSC_LINK` because GitHub Actions
+   turns a missing secret into an empty string, which `electron-builder`
+   would treat as a certificate path.
 2. `electron-builder` signs the `.app` with the Developer ID certificate, then
-   submits it to Apple's notarization service via `notarytool`.
+   submits it to Apple's notarization service via `notarytool` (when
+   `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set).
 3. After notarization, `electron-builder` staples the ticket to the `.dmg` and
    `.zip`.
 4. A post-build step verifies `codesign --verify --deep --strict` and records
@@ -211,5 +219,6 @@ xcrun stapler validate "Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg"
 | SignPath: "Signing request timed out" | Manual approval not completed | The release continues unsigned; check your email / SignPath dashboard if you want to retry signing |
 | SignPath: "Organization not found" | Wrong `SIGNPATH_ORGANIZATION_ID` | Copy the exact ID from SignPath → Settings |
 | SignPath: "Project not found" | Wrong `SIGNPATH_PROJECT_SLUG` | Must match the project slug in SignPath exactly |
+| macOS: `Build DMG and ZIP` fails with `/Users/runner/work/cambuz-pdf/cambuz-pdf not a file` (push builds only; pull requests pass) | An empty `CSC_LINK` reached `electron-builder`, e.g. a workflow change mapped `CSC_LINK: ${{ secrets.MAC_CSC_LINK }}` directly while the secret is unset | Pass the secret as `MAC_CSC_LINK` and let the build step export `CSC_LINK` only when it is non-empty (as the workflow does); `npm test` checks for this |
 | macOS: `codesign` error | Certificate password wrong | Re-export the `.p12` and re-encode |
 | macOS: notarization fails | Apple ID or app-specific password wrong | Regenerate at appleid.apple.com |

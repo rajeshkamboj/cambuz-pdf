@@ -25,7 +25,9 @@ concurrency:
 
 env:
   # Never search the runner for a code-signing identity; signing is only used
-  # when explicitly configured with the repository's signing credentials.
+  # when explicitly configured with the repository's signing credentials. (The
+  # macOS build turns discovery on only when MAC_CSC_LINK is set, and then
+  # electron-builder searches just the temporary keychain it builds from it.)
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
@@ -353,13 +355,39 @@ jobs:
       - run: npm ci
       - name: Build DMG and ZIP
         env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # electron-builder passes these to notarytool for Apple notarization.
+          # Do NOT map these secrets straight onto CSC_LINK / CSC_KEY_PASSWORD.
+          # GitHub Actions turns a missing secret into an empty string, and
+          # electron-builder treats CSC_LINK="" as a configured certificate: on
+          # push builds (pull-request builds skip signing) it resolves "" to the
+          # checkout directory and aborts with "<workspace> not a file". The
+          # script below exports them only when a certificate is configured.
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # electron-builder passes these to notarytool for Apple notarization
+          # after signing; empty values are ignored.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run build:mac
+        shell: bash
+        run: |
+          set -euo pipefail
+          mac_cert="${MAC_CSC_LINK:-}"
+          if [[ -n "${mac_cert//[[:space:]]/}" ]]; then
+            export CSC_LINK="$mac_cert"
+            if [[ -n "${MAC_CSC_KEY_PASSWORD:-}" ]]; then
+              export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+            fi
+            # electron-builder imports CSC_LINK into a temporary keychain but only
+            # looks for an identity there when discovery is on; the workflow-wide
+            # 'false' would otherwise skip signing even with a certificate.
+            export CSC_IDENTITY_AUTO_DISCOVERY=true
+            echo "MAC_CSC_LINK is configured: electron-builder will sign (and, with the APPLE_* secrets, notarize) the macOS app."
+          else
+            unset CSC_LINK CSC_KEY_PASSWORD
+            echo "MAC_CSC_LINK is not set: building an unsigned macOS app (unsigned releases are allowed)."
+          fi
+          unset mac_cert MAC_CSC_LINK MAC_CSC_KEY_PASSWORD
+          npm run build:mac
       - name: Verify packaged contents
         run: node scripts/check-packaged-app.mjs "dist/mac-arm64/Cambuz PDF Reader.app/Contents/Resources/app.asar"
       - name: Verify document types and icon wiring (build only, app not launched)

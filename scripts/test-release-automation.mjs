@@ -2,6 +2,7 @@
 // Cambuz PDF Reader — tests for automatic release publishing, README download
 // synchronization, and cambuz-landing feature manifest validation.
 
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,11 +24,17 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 const failures = [];
 
 function pass(name) {
   passed += 1;
   console.log(`  PASS  ${name}`);
+}
+
+function skip(name, reason) {
+  skipped += 1;
+  console.log(`  SKIP  ${name}${reason ? ` — ${reason}` : ''}`);
 }
 
 function fail(name, detail) {
@@ -458,7 +465,183 @@ assert(
 );
 assert(!workflowYaml.includes('/releases/latest'), 'workflow never references /releases/latest');
 
-console.log(`\nRelease automation tests: ${passed} passed, ${failed} failed`);
+// ---------------------------------------------------------------------------
+section('4. Optional macOS signing (missing secrets must yield an unsigned build)');
+
+// GitHub Actions expands a missing secret (or variable) to ''. electron-builder
+// keeps CSC_LINK='' as a configured certificate, resolves '' against the project
+// directory and aborts with "<workspace> not a file". Pull-request builds skip
+// signing, so only pushes (including every merge to main) failed.
+const SIGNING_ENV_VARS = [
+  'CSC_LINK',
+  'CSC_KEY_PASSWORD',
+  'CSC_NAME',
+  'CSC_INSTALLER_LINK',
+  'CSC_INSTALLER_KEY_PASSWORD',
+  'WIN_CSC_LINK',
+  'WIN_CSC_KEY_PASSWORD',
+];
+const expressionMappedSigningEnv = (envBlock, where) =>
+  Object.entries(envBlock ?? {})
+    .filter(([name, value]) => SIGNING_ENV_VARS.includes(name) && String(value).includes('${{'))
+    .map(([name]) => `${where} sets ${name}`);
+const directSigningMappings = expressionMappedSigningEnv(workflowDoc.env, 'workflow env');
+for (const [jobId, job] of Object.entries(workflowDoc.jobs ?? {})) {
+  directSigningMappings.push(...expressionMappedSigningEnv(job.env, `jobs.${jobId}.env`));
+  for (const step of job.steps ?? []) {
+    directSigningMappings.push(...expressionMappedSigningEnv(step.env, `jobs.${jobId} step "${step.name ?? step.uses ?? 'run'}"`));
+  }
+}
+assert(
+  directSigningMappings.length === 0,
+  'no env block maps a secret/expression straight onto an electron-builder signing variable',
+  directSigningMappings.join('; '),
+);
+
+const macBuildStep = (workflowDoc.jobs?.['macos-arm64']?.steps ?? []).find(
+  (step) => typeof step.run === 'string' && /\bnpm run build:mac\b/.test(step.run),
+);
+assert(Boolean(macBuildStep), 'macOS job has a step that runs npm run build:mac');
+assert(macBuildStep?.shell === 'bash', 'macOS build step runs its credential guard under bash');
+assert(
+  /secrets\.MAC_CSC_LINK\b/.test(String(macBuildStep?.env?.MAC_CSC_LINK)) &&
+    /secrets\.MAC_CSC_KEY_PASSWORD\b/.test(String(macBuildStep?.env?.MAC_CSC_KEY_PASSWORD)),
+  'macOS build step receives the certificate as MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD',
+);
+
+const bashProbe = process.platform === 'win32' ? null : spawnSync('bash', ['-c', 'echo ok'], { encoding: 'utf8' });
+if (!macBuildStep) {
+  skip('macOS build step credential guard behaviour', 'build step not found');
+} else if (bashProbe?.stdout?.trim() !== 'ok') {
+  skip('macOS build step credential guard behaviour', 'needs bash on Linux/macOS');
+} else {
+  // Run the real step script with a stand-in `npm` that records which signing
+  // variables electron-builder would have been started with.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cambuz-mac-signing-'));
+  try {
+    const binDir = path.join(tmpDir, 'bin');
+    fs.mkdirSync(binDir);
+    const stepScript = path.join(tmpDir, 'build-step.sh');
+    fs.writeFileSync(stepScript, macBuildStep.run, 'utf8');
+    const recorder = path.join(tmpDir, 'record-npm.cjs');
+    fs.writeFileSync(
+      recorder,
+      [
+        "const fs = require('fs');",
+        "const watched = ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_IDENTITY_AUTO_DISCOVERY', 'MAC_CSC_LINK', 'MAC_CSC_KEY_PASSWORD'];",
+        'const env = {};',
+        'for (const name of watched) if (Object.prototype.hasOwnProperty.call(process.env, name)) env[name] = process.env[name];',
+        'fs.writeFileSync(process.env.NPM_STUB_RECORD, JSON.stringify({ args: process.argv.slice(2), env }));',
+        "process.exit(Number(process.env.NPM_STUB_EXIT || '0'));",
+      ].join('\n'),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(binDir, 'npm'), '#!/usr/bin/env bash\nexec "$NPM_STUB_NODE" "$NPM_STUB_JS" "$@"\n', { mode: 0o755 });
+
+    // Resolve the step's `env:` block the way GitHub Actions does: a secret that
+    // is not configured expands to an empty string.
+    const resolveStepEnv = (secrets) =>
+      Object.fromEntries(
+        Object.entries(macBuildStep.env ?? {}).map(([name, value]) => {
+          const text = String(value);
+          const secretRef = /^\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}$/.exec(text.trim());
+          if (secretRef) return [name, secrets[secretRef[1]] ?? ''];
+          return [name, text.includes('${{') ? '' : text];
+        }),
+      );
+
+    let runCount = 0;
+    const runMacBuildStep = (secrets, inheritedEnv = {}) => {
+      runCount += 1;
+      const record = path.join(tmpDir, `npm-call-${runCount}.json`);
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', stepScript], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          // Inherited from the workflow-level env, exactly as on the runner.
+          CSC_IDENTITY_AUTO_DISCOVERY: String(workflowDoc.env?.CSC_IDENTITY_AUTO_DISCOVERY),
+          NPM_STUB_NODE: process.execPath,
+          NPM_STUB_JS: recorder,
+          NPM_STUB_RECORD: record,
+          ...inheritedEnv,
+          ...resolveStepEnv(secrets),
+        },
+      });
+      const call = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record, 'utf8')) : null;
+      return { status: result.status, output: `${result.stdout}${result.stderr}`.trim(), call };
+    };
+
+    const unsigned = runMacBuildStep({});
+    assert(
+      unsigned.status === 0 && unsigned.call?.args?.join(' ') === 'run build:mac',
+      'macOS build still runs npm run build:mac when no signing secrets are configured',
+      unsigned.output,
+    );
+    assert(
+      unsigned.call != null && !('CSC_LINK' in unsigned.call.env) && !('CSC_KEY_PASSWORD' in unsigned.call.env),
+      'missing MAC_CSC_LINK leaves CSC_LINK / CSC_KEY_PASSWORD unset (not empty) for electron-builder',
+      JSON.stringify(unsigned.call?.env),
+    );
+    assert(
+      unsigned.call?.env?.CSC_IDENTITY_AUTO_DISCOVERY === 'false',
+      'unsigned macOS build keeps identity auto-discovery off',
+      JSON.stringify(unsigned.call?.env),
+    );
+
+    const blank = runMacBuildStep({ MAC_CSC_LINK: ' \n\t ' });
+    assert(
+      blank.status === 0 && blank.call != null && !('CSC_LINK' in blank.call.env),
+      'whitespace-only MAC_CSC_LINK is treated as not configured',
+      JSON.stringify(blank.call?.env) || blank.output,
+    );
+
+    const inheritedEmpty = runMacBuildStep({}, { CSC_LINK: '', CSC_KEY_PASSWORD: '' });
+    assert(
+      inheritedEmpty.status === 0 &&
+        inheritedEmpty.call != null &&
+        !('CSC_LINK' in inheritedEmpty.call.env) &&
+        !('CSC_KEY_PASSWORD' in inheritedEmpty.call.env),
+      'an inherited empty CSC_LINK / CSC_KEY_PASSWORD is removed before electron-builder starts',
+      JSON.stringify(inheritedEmpty.call?.env) || inheritedEmpty.output,
+    );
+
+    const fakeCertificate = 'MIIKbFakeBase64DeveloperIdCertificate==';
+    const signed = runMacBuildStep({ MAC_CSC_LINK: fakeCertificate, MAC_CSC_KEY_PASSWORD: 'p12-password' });
+    assert(
+      signed.status === 0 &&
+        signed.call?.env?.CSC_LINK === fakeCertificate &&
+        signed.call?.env?.CSC_KEY_PASSWORD === 'p12-password',
+      'configured MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD are exported as CSC_LINK / CSC_KEY_PASSWORD',
+      JSON.stringify(signed.call?.env) || signed.output,
+    );
+    assert(
+      signed.call?.env?.CSC_IDENTITY_AUTO_DISCOVERY === 'true',
+      'a configured certificate enables identity discovery so electron-builder finds it in its temporary keychain',
+      JSON.stringify(signed.call?.env),
+    );
+    assert(
+      signed.call != null && !('MAC_CSC_LINK' in signed.call.env) && !('MAC_CSC_KEY_PASSWORD' in signed.call.env),
+      'raw MAC_CSC_* secrets are not passed on to the build a second time',
+      JSON.stringify(signed.call?.env),
+    );
+
+    const noPassword = runMacBuildStep({ MAC_CSC_LINK: fakeCertificate });
+    assert(
+      noPassword.status === 0 &&
+        noPassword.call?.env?.CSC_LINK === fakeCertificate &&
+        !('CSC_KEY_PASSWORD' in noPassword.call.env),
+      'a certificate without MAC_CSC_KEY_PASSWORD exports CSC_LINK only',
+      JSON.stringify(noPassword.call?.env) || noPassword.output,
+    );
+
+    const brokenBuild = runMacBuildStep({}, { NPM_STUB_EXIT: '7' });
+    assert(brokenBuild.status !== 0, 'a failing electron-builder run still fails the macOS build step', `exit ${brokenBuild.status}`);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+console.log(`\nRelease automation tests: ${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''}`);
 if (failed > 0) {
   console.log(`Failures:\n - ${failures.join('\n - ')}`);
   process.exit(1);
