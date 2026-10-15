@@ -340,7 +340,9 @@ jobs:
   macos-arm64:
     name: macOS arm64 (DMG + ZIP) — experimental
     needs: test
-    runs-on: macos-latest
+    # Pin to macOS 15: electron-builder 26.x dmg-builder uses HFS+ sparse images
+    # that fail to mount on macOS 26 (Tahoe); see electron-builder#9615.
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
