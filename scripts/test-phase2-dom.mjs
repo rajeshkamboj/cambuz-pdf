@@ -7,7 +7,7 @@
 // Canvas rendering, PDF.js in-browser behavior, IndexedDB and fullscreen
 // are covered by the live web preview + manual checklist (see README).
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
@@ -108,6 +108,41 @@ assert(
   [...document.querySelectorAll('#print-preset option')].some((option) => option.value === 'ink-saver'),
   'Ink Saver preset is available'
 );
+
+const manualPanel = document.getElementById('print-manual-panel');
+const manualDiagramPath = path.join(ROOT, 'src', 'manual-duplex-diagram.svg');
+const manualDiagram = readFileSync(manualDiagramPath, 'utf8');
+const printCss = readFileSync(path.join(ROOT, 'src', 'print.css'), 'utf8');
+assert(
+  manualPanel?.tagName === 'SECTION' && manualPanel.getAttribute('aria-labelledby') === 'print-manual-title',
+  'manual second-side prompt is a labelled semantic panel'
+);
+assert(
+  document.getElementById('print-manual-title')?.textContent === 'Print the second side' &&
+  manualPanel.querySelectorAll('.print-manual-instructions li').length === 3,
+  'manual prompt has a clear second-side title and three concise reload steps'
+);
+assert(
+  document.getElementById('print-manual-orientation-note')?.textContent.includes('Paper orientation varies by printer model and feed tray') &&
+  !manualPanel.textContent.includes('face-up') && !manualPanel.textContent.includes('face-down'),
+  'manual prompt warns that orientation is printer and tray dependent without a universal face instruction'
+);
+assert(
+  manualPanel.querySelector('img')?.getAttribute('src') === 'manual-duplex-diagram.svg' &&
+  existsSync(manualDiagramPath) && /Printer/.test(manualDiagram) && /Input tray/.test(manualDiagram) && /Rotate \/ reload/.test(manualDiagram),
+  'manual prompt uses the bundled conceptual printer, stack, rotation and input-tray diagram'
+);
+assert(
+  /\.print-manual-panel\s*\{[\s\S]*?width:\s*min\(900px, 100%\);[\s\S]*?min-width:\s*min\(560px, 100%\);/.test(printCss) &&
+  /\.print-manual-content\s*\{[\s\S]*?grid-template-columns:\s*minmax\(190px, 0\.75fr\) minmax\(300px, 1fr\);/.test(printCss) &&
+  /@media \(max-width: 680px\)[\s\S]*?\.print-manual-content\s*\{\s*grid-template-columns:\s*1fr;/.test(printCss),
+  'manual prompt CSS gives the panel a responsive minimum width and collapses its content safely'
+);
+assert(
+  /\.print-dialog-footer\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/.test(printCss) &&
+  /prefers-reduced-motion/.test(printCss) && /:focus-visible/.test(printCss),
+  'manual prompt footer avoids flex shrinking and supplies reduced-motion and visible-focus support'
+);
 const printController = new PrintController({
   pdfjsLib: {},
   standardFontDataUrl: '',
@@ -129,6 +164,10 @@ assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'lon
   printController.previewKey(validPrintForm.settings), 'native job choices do not regenerate the preview PDF');
 // Manual two-sided (no duplex unit): odd sheets first, even sheets after a reload.
 {
+  // Mirror the state created by open() so focus management is exercised against
+  // a visible modal rather than jsdom's initially hidden HTML fixture.
+  printController.opened = true;
+  printController.ui.dialog.style.display = 'flex';
   const { PDFDocument } = await import('pdf-lib');
   const threePages = await PDFDocument.create();
   for (let i = 0; i < 3; i += 1) threePages.addPage([210, 297]);
@@ -157,18 +196,37 @@ assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'lon
   assert(printController.manualJob && printController.manualJob.backCount === 1,
     'manual pass 2 (one even sheet) is held until the user confirms');
   assert(!document.getElementById('print-manual-panel').hidden, 'manual panel asks the user to reload the stack');
+  assert(printController.ui.manualText.textContent.includes('Once those sheets have printed') &&
+    document.activeElement === printController.ui.manualContinue,
+  'manual panel waits for the first side and moves keyboard focus to Print second side');
   assert(printController.ui.submitButton.disabled, 'submit is disabled while the second side is pending');
+
+  // Tab remains in the print dialog; this matters when the new panel is taller
+  // than the normal footer and users navigate its actions by keyboard.
+  printController.ui.cancelButton.focus();
+  printController.ui.dialog.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Tab', bubbles: true, cancelable: true,
+  }));
+  assert(document.activeElement === printController.ui.closeButton,
+    'Tab wraps from the final print action to the start of the modal');
+  printController.ui.closeButton.focus();
+  printController.ui.dialog.dispatchEvent(new window.KeyboardEvent('keydown', {
+    key: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
+  }));
+  assert(document.activeElement === printController.ui.cancelButton,
+    'Shift+Tab wraps from the modal start to the final print action');
 
   await printController.continueManualDuplex();
   assert(calls.length === 2 && calls[1].pages === 1 && calls[1].options.duplexMode === 'simplex',
     'manual pass 2 sends the even sheet as a one-sided job');
-  assert(printController.manualJob === null && document.getElementById('print-manual-panel').hidden,
-    'manual panel closes after side two is sent');
+  assert(printController.manualJob === null && document.getElementById('print-manual-panel').hidden &&
+    document.activeElement === printController.ui.cancelButton,
+  'manual panel closes after side two is sent and returns focus to Cancel');
 
   await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
   printController.cancelManualDuplex();
-  assert(printController.manualJob === null && calls.length === 3,
-    'skipping side two clears the pending job without another print');
+  assert(printController.manualJob === null && calls.length === 3 && document.activeElement === printController.ui.cancelButton,
+    'skipping side two clears the pending job without another print and returns focus safely');
 
   await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
   printController.clearManualJob();
