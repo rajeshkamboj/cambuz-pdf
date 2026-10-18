@@ -112,31 +112,84 @@ assert(
 const manualPanel = document.getElementById('print-manual-panel');
 const manualDiagramPath = path.join(ROOT, 'src', 'manual-duplex-diagram.svg');
 const manualDiagram = readFileSync(manualDiagramPath, 'utf8');
+const manualSvgDom = new JSDOM(manualDiagram, { contentType: 'image/svg+xml' });
+const manualSvg = manualSvgDom.window.document.documentElement;
+const manualAreas = [...manualSvg.querySelectorAll('[data-area]')];
 const printCss = readFileSync(path.join(ROOT, 'src', 'print.css'), 'utf8');
 assert(
-  manualPanel?.tagName === 'SECTION' && manualPanel.getAttribute('aria-labelledby') === 'print-manual-title',
-  'manual second-side prompt is a labelled semantic panel'
+  manualPanel?.tagName === 'SECTION' && manualPanel.getAttribute('aria-labelledby') === 'print-manual-title' &&
+  manualPanel.getAttribute('aria-describedby') === 'print-manual-orientation-note',
+  'manual second-side prompt is a labelled semantic panel with a linked loading note'
 );
+const manualSteps = [...manualPanel.querySelectorAll('.print-manual-instructions li')];
 assert(
   document.getElementById('print-manual-title')?.textContent === 'Print the second side' &&
-  manualPanel.querySelectorAll('.print-manual-instructions li').length === 3,
-  'manual prompt has a clear second-side title and three concise reload steps'
+  manualSteps.length === 4 &&
+  manualSteps[0].textContent.includes('Collect the printed stack') &&
+  manualSteps[1].textContent.includes('same order') &&
+  manualSteps[2].textContent.includes('input tray') && manualSteps[2].textContent.includes('selected printer workflow') &&
+  manualSteps[3].querySelector('strong')?.textContent === 'Print second side',
+  'manual prompt gives all four requested collection, order, reload and continue steps'
 );
 assert(
-  document.getElementById('print-manual-orientation-note')?.textContent.includes('Paper orientation varies by printer model and feed tray') &&
-  !manualPanel.textContent.includes('face-up') && !manualPanel.textContent.includes('face-down'),
-  'manual prompt warns that orientation is printer and tray dependent without a universal face instruction'
+  document.getElementById('print-manual-orientation-note')?.textContent.trim() ===
+    'Paper loading direction can vary by printer. Follow the instructions verified for your printer.',
+  'manual prompt displays the exact printer loading-direction note'
 );
 assert(
   manualPanel.querySelector('img')?.getAttribute('src') === 'manual-duplex-diagram.svg' &&
-  existsSync(manualDiagramPath) && /Printer/.test(manualDiagram) && /Input tray/.test(manualDiagram) && /Rotate \/ reload/.test(manualDiagram),
-  'manual prompt uses the bundled conceptual printer, stack, rotation and input-tray diagram'
+  manualPanel.querySelector('img')?.getAttribute('alt')?.includes('straight arrow') &&
+  existsSync(manualDiagramPath) && manualSvg.getAttribute('viewBox') === '0 0 500 280',
+  'manual prompt uses an accessible, locally bundled SVG diagram'
+);
+assert(
+  manualAreas.map((area) => area.getAttribute('data-area')).join(',') === 'output,input' &&
+  manualAreas[0].querySelector('[data-role="area-label"]')?.textContent === 'OUTPUT TRAY' &&
+  manualAreas[1].querySelector('[data-role="area-label"]')?.textContent === 'INPUT TRAY' &&
+  !/rotate|rotation/i.test(manualDiagram),
+  'diagram clearly separates output and input trays without any rotation instruction'
+);
+const diagramLayoutIsClear = manualAreas.length === 2 && manualAreas.every((area) => {
+  const panel = area.querySelector('[data-role="panel"]');
+  const illustration = area.querySelector('[data-role="illustration"]');
+  if (!panel || !illustration) return false;
+  const panelX = Number(panel.getAttribute('x'));
+  const panelY = Number(panel.getAttribute('y'));
+  const panelWidth = Number(panel.getAttribute('width'));
+  const panelHeight = Number(panel.getAttribute('height'));
+  const [artX, artY, artWidth, artHeight] = illustration.getAttribute('data-bounds').split(/\s+/).map(Number);
+  const labels = [...area.querySelectorAll('[data-role="area-label"], [data-role="label"]')];
+  const labelsFit = labels.every((label) => {
+    const fontSize = Number(label.getAttribute('font-size'));
+    const estimatedWidth = label.textContent.length * fontSize * 0.5;
+    const centerX = Number(label.getAttribute('x'));
+    return label.getAttribute('text-anchor') === 'middle' && label.getAttribute('fill') === '#172033' &&
+      fontSize >= 13 && estimatedWidth <= panelWidth - 16 &&
+      centerX - estimatedWidth / 2 >= panelX + 8 && centerX + estimatedWidth / 2 <= panelX + panelWidth - 8 &&
+      Number(label.getAttribute('y')) < artY - 4;
+  });
+  return labels.length >= 3 && labelsFit && artX >= panelX + 4 && artX + artWidth <= panelX + panelWidth - 4 &&
+    artY >= panelY + 80 && artY + artHeight <= panelY + panelHeight - 4;
+});
+const flowArrow = manualSvg.querySelector('[data-role="flow-arrow"]');
+const flowArrowhead = manualSvg.querySelector('[data-role="flow-arrowhead"]');
+assert(
+  diagramLayoutIsClear,
+  'diagram labels stay within their areas, use high-contrast readable type and sit above the illustrations'
+);
+assert(
+  /^M\s*226\s+158\s*H\s*265$/.test(flowArrow?.getAttribute('d') || '') &&
+  /^M\s*262\s+149\s*L\s*278\s+158\s*L\s*262\s+167\s*Z$/.test(flowArrowhead?.getAttribute('d') || '') &&
+  flowArrow?.getAttribute('stroke') === flowArrowhead?.getAttribute('fill') &&
+  !/[CQAS]/i.test(flowArrow?.getAttribute('d') || ''),
+  'diagram uses a visibly headed straight output-to-input arrow rather than a curved or rotational arrow'
 );
 assert(
   /\.print-manual-panel\s*\{[\s\S]*?width:\s*min\(900px, 100%\);[\s\S]*?min-width:\s*min\(560px, 100%\);/.test(printCss) &&
-  /\.print-manual-content\s*\{[\s\S]*?grid-template-columns:\s*minmax\(190px, 0\.75fr\) minmax\(300px, 1fr\);/.test(printCss) &&
-  /@media \(max-width: 680px\)[\s\S]*?\.print-manual-content\s*\{\s*grid-template-columns:\s*1fr;/.test(printCss),
-  'manual prompt CSS gives the panel a responsive minimum width and collapses its content safely'
+  /\.print-manual-content\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.25fr\) minmax\(280px, 0\.75fr\);/.test(printCss) &&
+  /@media \(max-width: 800px\)[\s\S]*?\.print-manual-content\s*\{\s*grid-template-columns:\s*1fr;/.test(printCss) &&
+  !/\.print-download-btn\s*\{\s*display:\s*none;/.test(printCss),
+  'manual prompt CSS keeps its responsive two-column layout and preserves Download on narrow screens'
 );
 assert(
   /\.print-dialog-footer\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/.test(printCss) &&
@@ -172,6 +225,8 @@ assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'lon
   const threePages = await PDFDocument.create();
   for (let i = 0; i < 3; i += 1) threePages.addPage([210, 297]);
   const composedBytes = await threePages.save();
+  printController.latestPdfBytes = composedBytes;
+  printController.updateActionState();
   const pageCountOf = async (bytes) => (await PDFDocument.load(bytes)).getPageCount();
   const calls = [];
   const fakeApi = {
@@ -200,6 +255,9 @@ assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'lon
     document.activeElement === printController.ui.manualContinue,
   'manual panel waits for the first side and moves keyboard focus to Print second side');
   assert(printController.ui.submitButton.disabled, 'submit is disabled while the second side is pending');
+  assert(!printController.ui.downloadButton.disabled && !printController.ui.cancelButton.disabled &&
+    !printController.ui.manualCancel.disabled && printController.ui.manualCancel.textContent.trim() === 'Skip second side',
+  'Download print-ready PDF, Cancel and Skip second side remain available during the pending pass');
 
   // Tab remains in the print dialog; this matters when the new panel is taller
   // than the normal footer and users navigate its actions by keyboard.
@@ -229,7 +287,11 @@ assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'lon
     'skipping side two clears the pending job without another print and returns focus safely');
 
   await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
-  printController.clearManualJob();
+  const callsBeforeDialogCancel = calls.length;
+  printController.ui.cancelButton.click();
+  assert(!printController.isOpen && printController.manualJob === null && printController.ui.manualPanel.hidden &&
+    calls.length === callsBeforeDialogCancel,
+  'Cancel closes the dialog and clears the pending second-side job without sending it');
   delete globalThis.window.cambuzAPI;
 }
 
