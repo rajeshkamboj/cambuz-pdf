@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('cambuzAPI', {
   onOpenFilePath: (callback) => ipcRenderer.on('open-file-path', callback),
   getPrinters: () => ipcRenderer.invoke('list-printers'),
   printPdf: (pdfBytes, options) => ipcRenderer.invoke('print-pdf', pdfBytes, options),
+  cancelPrint: (jobId) => ipcRenderer.invoke('cancel-print', jobId),
   onMenuPrint: (callback) => ipcRenderer.on('menu-print', callback),
   onMenuOpenFile: (callback) => ipcRenderer.on('menu-open-file', callback),
   onMenuCloseFile: (callback) => ipcRenderer.on('menu-close-file', callback),
