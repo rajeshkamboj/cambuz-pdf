@@ -1,46 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Conceptual manual-duplex diagram. The printer guide determines the exact
-  paper orientation for its model and feed tray.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 250" role="img" aria-labelledby="title desc">
-  <title id="title">Manual duplex paper reload concept</title>
-  <desc id="desc">A printer outputs a stack of paper. The stack is kept in order, then follows a circular reload arrow into the printer input tray. The diagram directs the reader to their printer guide for the correct orientation.</desc>
-  <defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-      <path d="M0 0L10 5L0 10z" fill="#89b4fa"/>
-    </marker>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".28"/>
-    </filter>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 280" role="img" aria-labelledby="title desc">
+  <title id="title">Manual duplex: collect and reload the paper stack</title>
+  <desc id="desc">Two separate areas show the output tray and input tray. A straight arrow points from output to input. Reload the stack using the loading direction verified for your printer.</desc>
+  <rect x="1" y="1" width="498" height="278" rx="16" fill="#f5f7fb" stroke="#8b9bb1" stroke-width="2"/>
 
-  <rect x="1" y="1" width="418" height="248" rx="14" fill="#181825" stroke="#45475a" stroke-width="2"/>
+  <g data-area="output">
+    <rect data-role="panel" x="14" y="16" width="202" height="248" rx="12" fill="#ffffff" stroke="#526b8e" stroke-width="2"/>
+    <text data-role="area-label" x="115" y="48" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="17" font-weight="750">OUTPUT TRAY</text>
+    <text data-role="label" x="115" y="77" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">Collect printed sheets</text>
+    <text data-role="label" x="115" y="97" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">Keep sheets in order</text>
 
-  <!-- Output stack: three offset sheets make the order visible. -->
-  <g filter="url(#shadow)">
-    <path d="M42 139h82l14 13v55H42z" fill="#cdd6f4" stroke="#89b4fa" stroke-width="2"/>
-    <path d="M35 132h82l14 13v55H35z" fill="#e6e9ef" stroke="#89b4fa" stroke-width="2"/>
-    <path d="M28 125h82l14 13v55H28z" fill="#eff1f5" stroke="#89b4fa" stroke-width="2"/>
-    <path d="M47 151h52M47 164h45" stroke="#5c5f77" stroke-width="3" stroke-linecap="round"/>
+    <g data-role="illustration" data-bounds="40 122 150 86">
+      <path d="M40 176H190L174 208H55Z" fill="#dce8f8" stroke="#315b91" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M48 181H183" fill="none" stroke="#315b91" stroke-width="2"/>
+      <path d="M80 134H166V185H80Z" fill="#d8e6f7" stroke="#315b91" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M72 128H158V179H72Z" fill="#edf3fc" stroke="#315b91" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M64 122H150V173H64Z" fill="#ffffff" stroke="#315b91" stroke-width="2" stroke-linejoin="round"/>
+    </g>
   </g>
-  <text x="79" y="224" text-anchor="middle" fill="#cdd6f4" font-family="system-ui, sans-serif" font-size="14" font-weight="700">1. Keep stack in order</text>
 
-  <!-- Printer body, output slot and generic input tray. -->
-  <g filter="url(#shadow)">
-    <rect x="253" y="57" width="126" height="100" rx="13" fill="#313244" stroke="#89b4fa" stroke-width="2"/>
-    <path d="M272 79h88v30h-88z" rx="4" fill="#181825" stroke="#6c7086" stroke-width="2"/>
-    <circle cx="350" cy="127" r="5" fill="#a6e3a1"/>
-    <path d="M277 158h79l16 42H261z" fill="#45475a" stroke="#89b4fa" stroke-width="2"/>
-    <path d="M272 174h89" stroke="#cdd6f4" stroke-width="2" stroke-dasharray="5 5"/>
-    <path d="M291 52h50v-18h-50z" fill="#cdd6f4" stroke="#89b4fa" stroke-width="2"/>
+  <path data-role="flow-arrow" d="M226 158H265" fill="none" stroke="#2458a6" stroke-width="5" stroke-linecap="round"/>
+  <path data-role="flow-arrowhead" d="M262 149L278 158L262 167Z" fill="#2458a6"/>
+
+  <g data-area="input">
+    <rect data-role="panel" x="284" y="16" width="202" height="248" rx="12" fill="#ffffff" stroke="#526b8e" stroke-width="2"/>
+    <text data-role="area-label" x="385" y="48" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="17" font-weight="750">INPUT TRAY</text>
+    <text data-role="label" x="385" y="77" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">Reload the stack using</text>
+    <text data-role="label" x="385" y="97" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">your printer's verified</text>
+    <text data-role="label" x="385" y="117" text-anchor="middle" fill="#172033" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">loading direction</text>
+
+    <g data-role="illustration" data-bounds="290 137 188 82">
+      <path d="M300 188H468L478 219H290Z" fill="#dcefe6" stroke="#267254" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M307 193H468" fill="none" stroke="#267254" stroke-width="2"/>
+      <path d="M344 149H430V197H344Z" fill="#cfe8dc" stroke="#267254" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M336 143H422V191H336Z" fill="#e9f5ef" stroke="#267254" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M328 137H414V185H328Z" fill="#ffffff" stroke="#267254" stroke-width="2" stroke-linejoin="round"/>
+    </g>
   </g>
-  <text x="316" y="43" text-anchor="middle" fill="#cdd6f4" font-family="system-ui, sans-serif" font-size="14" font-weight="700">Printer</text>
-  <text x="316" y="221" text-anchor="middle" fill="#cdd6f4" font-family="system-ui, sans-serif" font-size="14" font-weight="700">Input tray</text>
-
-  <!-- Circular arrow shows the reload movement but no face orientation. -->
-  <path d="M138 152C164 84 226 83 253 139" fill="none" stroke="#89b4fa" stroke-width="6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-  <path d="M151 111c15-18 33-27 52-27" fill="none" stroke="#89b4fa" stroke-width="3" stroke-linecap="round"/>
-  <text x="198" y="106" text-anchor="middle" fill="#89b4fa" font-family="system-ui, sans-serif" font-size="13" font-weight="700">2. Rotate / reload</text>
-  <text x="201" y="126" text-anchor="middle" fill="#a6adc8" font-family="system-ui, sans-serif" font-size="11">Follow your printer guide</text>
 </svg>

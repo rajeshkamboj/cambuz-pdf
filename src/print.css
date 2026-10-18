@@ -435,7 +435,7 @@
 
 .print-manual-content {
   display: grid;
-  grid-template-columns: minmax(190px, 0.75fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
   align-items: center;
   gap: clamp(16px, 3vw, 32px);
   margin-top: 18px;
@@ -453,7 +453,7 @@
 
 .print-manual-figure img {
   display: block;
-  width: min(100%, 390px);
+  width: min(100%, 520px);
   height: auto;
   margin-inline: auto;
 }
@@ -550,8 +550,12 @@
     border-radius: 0;
   }
   .print-dialog-content { grid-template-columns: minmax(265px, 320px) minmax(0, 1fr); }
-  .print-dialog-actions .print-download-btn { display: none; }
   .print-manual-panel { max-height: min(590px, 62dvh); }
+}
+
+@media (max-width: 800px) {
+  .print-manual-content { grid-template-columns: 1fr; gap: 16px; }
+  .print-manual-figure { max-width: 540px; width: 100%; margin-inline: auto; }
 }
 
 @media (max-width: 680px) {
@@ -571,7 +575,7 @@
     padding: 16px;
   }
   .print-manual-content { grid-template-columns: 1fr; gap: 16px; }
-  .print-manual-figure { max-width: 420px; width: 100%; margin-inline: auto; }
+  .print-manual-figure { max-width: 540px; width: 100%; margin-inline: auto; }
   .print-manual-actions { justify-content: stretch; }
   .print-manual-actions .btn-primary,
   .print-manual-actions .btn-secondary { flex: 1 1 170px; }
