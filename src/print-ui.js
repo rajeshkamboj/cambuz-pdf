@@ -133,6 +133,12 @@ export class PrintController {
     this.latestPreviewKey = '';
     this.browserPrintUrls = new Set();
     this.submitting = false;
+    // The in-flight native print job (main process) and the "printer may be
+    // offline" watchdog, so a job stuck on an unresponsive printer can always
+    // be cancelled from this dialog instead of hanging on "Sending…".
+    this.activePrintJobId = null;
+    this.printJobSequence = 0;
+    this.printWatchdogTimer = null;
     // Manual two-sided printing: the even-page pass waiting for the user to
     // reload the printed stack. Null when no second pass is pending.
     this.manualJob = null;
@@ -148,7 +154,12 @@ export class PrintController {
   bindEvents() {
     this.ui.toolbarButton.addEventListener('click', () => this.open());
     this.ui.closeButton.addEventListener('click', () => this.close(true));
-    this.ui.cancelButton.addEventListener('click', () => this.close(true));
+    // While a job is sending, this button reads "Cancel print" and aborts the
+    // native job, keeping the dialog open so another printer can be chosen.
+    this.ui.cancelButton.addEventListener('click', () => {
+      if (this.submitting) this.cancelActivePrint();
+      else this.close(true);
+    });
     this.ui.dialog.addEventListener('click', (event) => {
       if (event.target === this.ui.dialog) this.close(true);
     });
@@ -257,6 +268,9 @@ export class PrintController {
   close(restoreFocus = true) {
     const wasOpen = this.opened;
     this.opened = false;
+    // Never leave a native job running behind a closed dialog: a job stuck on
+    // an offline printer would otherwise stay "Sending…" until the app quits.
+    this.cancelActivePrint();
     this.clearManualJob();
     this.previewBuildVersion += 1;
     clearTimeout(this.previewBuildTimer);
@@ -707,6 +721,42 @@ export class PrintController {
     if (message) this.onStatus(message);
   }
 
+  /**
+   * Flip the dialog into/out of its "sending" state. While sending, the footer
+   * Cancel button becomes "Cancel print" and a watchdog warns if the printer
+   * has not responded for a while (usually: it is offline).
+   */
+  setSubmitting(active) {
+    this.submitting = active;
+    this.ui.cancelButton.textContent = active ? 'Cancel print' : 'Cancel';
+    this.clearPrintWatchdog();
+    if (active) {
+      this.printWatchdogTimer = setTimeout(() => {
+        this.printWatchdogTimer = null;
+        if (this.submitting && this.opened) {
+          this.setStatus('Still waiting for the printer to respond. If it is switched off or offline, press “Cancel print”.');
+        }
+      }, 20_000);
+    }
+  }
+
+  clearPrintWatchdog() {
+    if (this.printWatchdogTimer) {
+      clearTimeout(this.printWatchdogTimer);
+      this.printWatchdogTimer = null;
+    }
+  }
+
+  /** Ask the main process to abort the in-flight native print job, if any. */
+  cancelActivePrint() {
+    const api = window.cambuzAPI;
+    if (!this.activePrintJobId || typeof api?.cancelPrint !== 'function') return;
+    // The pending printPdf() promise settles as cancelled; the print flow's
+    // own finally block then restores the buttons and status line.
+    api.cancelPrint(this.activePrintJobId).catch(() => { /* job already gone */ });
+    if (this.opened) this.setStatus('Cancelling print…');
+  }
+
   async print(forceCurrentPage) {
     if (!this.opened || this.submitting || this.manualJob) return;
     if (forceCurrentPage) {
@@ -771,20 +821,39 @@ export class PrintController {
         this.openBrowserPrint(result.bytes);
       }
     } catch (error) {
-      console.error('Printing failed:', error);
-      this.setStatus(`Printing failed: ${error.message}`, true);
+      if (error?.code === 'PRINT_CANCELLED') {
+        this.setStatus('Print cancelled.');
+      } else {
+        console.error('Printing failed:', error);
+        this.setStatus(`Printing failed: ${error.message}`, true);
+      }
     } finally {
-      this.submitting = false;
+      this.setSubmitting(false);
       this.ui.submitLabel.textContent = 'Print';
       this.updateActionState();
     }
   }
 
-  /** Send one native job and resolve with the destination name. Throws on failure. */
+  /**
+   * Send one native job and resolve with the destination name. Throws on
+   * failure; a user cancellation throws an error with code 'PRINT_CANCELLED'.
+   * The job id lets "Cancel print" abort this exact job in the main process.
+   */
   async sendNativeJob(api, bytes, jobOptions) {
-    const nativeResult = await api.printPdf(bytes, jobOptions);
-    if (!nativeResult?.ok) throw new Error(nativeResult?.error || 'The operating system could not start the print job.');
-    return nativeResult.printerName || jobOptions.deviceName || 'selected printer';
+    const jobId = `print-${++this.printJobSequence}`;
+    this.activePrintJobId = jobId;
+    try {
+      const nativeResult = await api.printPdf(bytes, { ...jobOptions, jobId });
+      if (nativeResult?.cancelled) {
+        const cancelled = new Error('Print cancelled.');
+        cancelled.code = 'PRINT_CANCELLED';
+        throw cancelled;
+      }
+      if (!nativeResult?.ok) throw new Error(nativeResult?.error || 'The operating system could not start the print job.');
+      return nativeResult.printerName || jobOptions.deviceName || 'selected printer';
+    } finally {
+      if (this.activePrintJobId === jobId) this.activePrintJobId = null;
+    }
   }
 
   /**
@@ -837,9 +906,12 @@ export class PrintController {
     const job = this.manualJob;
     if (!job || this.submitting) return;
     const api = window.cambuzAPI;
-    this.submitting = true;
+    this.setSubmitting(true);
     this.ui.manualContinue.disabled = true;
-    this.ui.manualCancel.disabled = true;
+    // Keep the panel's cancel button usable while side two is sending: it
+    // becomes "Cancel print" so a stuck second side can be aborted too.
+    this.ui.manualCancel.disabled = false;
+    this.ui.manualCancel.textContent = 'Cancel print';
     this.setStatus('Sending side two…');
     try {
       const destination = await this.sendNativeJob(api, job.backBytes, job.options);
@@ -847,18 +919,27 @@ export class PrintController {
       this.setStatus(`Side two sent to ${destination}. Check the sheet order on the printed output.`, false);
       this.onStatus(`Side two sent to ${destination}`);
     } catch (error) {
-      console.error('Printing side two failed:', error);
-      this.setStatus(`Side two failed: ${error.message}. Press “Print second side” to try again, or skip it.`, true);
+      if (error?.code === 'PRINT_CANCELLED') {
+        this.setStatus('Side two cancelled. Press “Print second side” to try again, or skip it.');
+      } else {
+        console.error('Printing side two failed:', error);
+        this.setStatus(`Side two failed: ${error.message}. Press “Print second side” to try again, or skip it.`, true);
+      }
     } finally {
-      this.submitting = false;
+      this.setSubmitting(false);
       this.ui.manualContinue.disabled = false;
       this.ui.manualCancel.disabled = false;
+      this.ui.manualCancel.textContent = 'Skip second side';
       this.updateActionState();
     }
   }
 
   cancelManualDuplex() {
-    if (this.submitting || !this.manualJob) return;
+    if (this.submitting) {
+      this.cancelActivePrint();
+      return;
+    }
+    if (!this.manualJob) return;
     this.clearManualJob({ restoreFocus: true });
     this.setStatus('Side two skipped. Only the odd pages were printed.', false);
     this.updateActionState();

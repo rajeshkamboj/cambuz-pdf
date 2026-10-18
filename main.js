@@ -408,9 +408,26 @@ ipcMain.handle('dialog-open-pdfs', async () => {
 // so the preload contract is unchanged; it is simply always false on current
 // runtimes, and the renderer then falls back to its "Choose in system print
 // dialog…" choice, which still reaches the OS default through the native dialog.
+// Race a promise against a deadline. Used around OS printing calls, which can
+// block for a very long time when a (network) printer is offline — without a
+// deadline the print dialog would sit on "Sending…" until the app is quit.
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 ipcMain.handle('list-printers', async (event) => {
   try {
-    const printers = await event.sender.getPrintersAsync();
+    const printers = await withTimeout(
+      event.sender.getPrintersAsync(),
+      15000,
+      'Listing printers timed out.'
+    );
     return printers.map((printer) => ({
       name: String(printer.name || ''),
       displayName: String(printer.displayName || printer.name || ''),
@@ -463,11 +480,44 @@ function getNativePaperSize(options) {
   };
 }
 
+// In-flight native print jobs, keyed by the renderer's job id. An offline
+// printer can leave Electron's print callback pending for many minutes, so the
+// dialog can ask to abort a job instead of waiting for the print timeout (or
+// quitting the app). Cancelling settles the pending print below, and the
+// finally block then destroys the print window — which also dismisses the
+// native system print dialog when one is open.
+const activePrintJobs = new Map();
+
+ipcMain.handle('cancel-print', async (_event, jobId) => {
+  const job = typeof jobId === 'string' ? activePrintJobs.get(jobId) : undefined;
+  if (!job) return false;
+  job.cancel();
+  return true;
+});
+
 // Native print route: the renderer sends the already-composed, previewed PDF.
 // Electron's print API then routes the job through the selected Windows driver.
 ipcMain.handle('print-pdf', async (_event, rawBytes, rawOptions = {}) => {
   let tempDirectory = null;
   let printWindow = null;
+  const jobId = typeof rawOptions?.jobId === 'string' && rawOptions.jobId.length <= 64
+    ? rawOptions.jobId
+    : null;
+  // Cancellation can arrive at any point (e.g. while printers are still being
+  // enumerated); every await below re-checks this flag, and once the native
+  // print call is pending `settle` resolves it immediately.
+  const job = { cancelled: false, settle: null, cancel: null };
+  job.cancel = () => {
+    job.cancelled = true;
+    job.settle?.({ success: false, cancelled: true });
+  };
+  if (jobId) {
+    activePrintJobs.get(jobId)?.cancel(); // defensive: a duplicate id replaces the old job
+    activePrintJobs.set(jobId, job);
+  }
+  const throwIfCancelled = () => {
+    if (job.cancelled) throw new Error('Print cancelled.');
+  };
   try {
     const pdfBuffer = asPdfBuffer(rawBytes);
     if (pdfBuffer.length < 5 || pdfBuffer.length > MAX_PRINT_PDF_BYTES) {
@@ -492,7 +542,14 @@ ipcMain.handle('print-pdf', async (_event, rawBytes, rawOptions = {}) => {
     const printerName = typeof options.deviceName === 'string' ? options.deviceName.trim() : '';
 
     if (printerName) {
-      const installedPrinters = await mainWindow.webContents.getPrintersAsync();
+      // Printer enumeration can stall on an offline network printer; never
+      // let it block the job forever.
+      const installedPrinters = await withTimeout(
+        mainWindow.webContents.getPrintersAsync(),
+        20000,
+        'Checking the printer timed out. It may be offline — refresh the printer list and try again.'
+      );
+      throwIfCancelled();
       if (!installedPrinters.some((printer) => printer.name === printerName)) {
         throw new Error('The selected printer is no longer available. Refresh the printer list and try again.');
       }
@@ -521,10 +578,16 @@ ipcMain.handle('print-pdf', async (_event, rawBytes, rawOptions = {}) => {
     // the printed document must not spawn windows anywhere.
     printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-    await printWindow.loadFile(pdfPath);
+    await withTimeout(
+      printWindow.loadFile(pdfPath),
+      30000,
+      'Preparing the print job timed out. Please try again.'
+    );
+    throwIfCancelled();
     // Allow Chromium's built-in PDF viewer to finish initializing before the
     // native print call; did-finish-load alone can precede PDF plugin setup.
     await new Promise((resolve) => setTimeout(resolve, 250));
+    throwIfCancelled();
 
     const nativeOptions = {
       silent: Boolean(printerName),
@@ -543,33 +606,49 @@ ipcMain.handle('print-pdf', async (_event, rawBytes, rawOptions = {}) => {
 
     const outcome = await new Promise((resolve) => {
       let settled = false;
-      const timeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        resolve({ success: false, failureReason: 'Native printing timed out.' });
-      }, printerName ? 120000 : 10 * 60 * 1000);
-      try {
-        printWindow.webContents.print(nativeOptions, (success, failureReason) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeout);
-          resolve({ success, failureReason });
-        });
-      } catch (error) {
+      let timeout;
+      const settle = (value) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        resolve({ success: false, failureReason: error.message });
+        if (job.settle === settle) job.settle = null;
+        resolve(value);
+      };
+      // Expose this to the job record so cancel-print can end the wait now
+      // instead of whenever the (possibly offline) printer responds.
+      job.settle = settle;
+      // Silent printing only needs to spool the job, so a minute is generous.
+      // The system-dialog route may legitimately wait on the user, so it keeps
+      // a long bound — the dialog's "Cancel print" covers a stuck printer.
+      timeout = setTimeout(() => {
+        settle({
+          success: false,
+          failureReason: 'The printer did not respond in time. Check that it is switched on and connected, then try again.',
+        });
+      }, printerName ? 60000 : 10 * 60 * 1000);
+      // If the user closes the print window (e.g. because the native print UI
+      // is stuck on an offline printer), Electron's print callback may never
+      // fire — treat closing the window as cancelling this job.
+      printWindow.once('closed', () => settle({ success: false, cancelled: true }));
+      try {
+        printWindow.webContents.print(nativeOptions, (success, failureReason) => {
+          settle({ success, failureReason });
+        });
+      } catch (error) {
+        settle({ success: false, failureReason: error.message });
       }
     });
 
+    if (outcome.cancelled) return { ok: false, cancelled: true };
     if (!outcome.success) {
       throw new Error(outcome.failureReason || 'The native printer did not accept the print job.');
     }
     return { ok: true, printerName: printerName || 'system printer' };
   } catch (err) {
+    if (job.cancelled) return { ok: false, cancelled: true };
     return { ok: false, error: err.message || 'Printing failed.' };
   } finally {
+    if (jobId && activePrintJobs.get(jobId) === job) activePrintJobs.delete(jobId);
     if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
     if (tempDirectory) {
       await fs.promises.rm(tempDirectory, { recursive: true, force: true }).catch(() => {});
