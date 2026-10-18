@@ -14,9 +14,13 @@
 .print-dialog-panel {
   display: flex;
   flex-direction: column;
-  width: min(1320px, 100%);
-  height: min(900px, 100%);
-  min-height: 520px;
+  width: min(1320px, calc(100vw - 36px));
+  height: min(900px, calc(100vh - 36px));
+  height: min(900px, calc(100dvh - 36px));
+  min-height: min(520px, calc(100vh - 36px));
+  min-height: min(520px, calc(100dvh - 36px));
+  max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - 36px);
   overflow: hidden;
   color: var(--text-primary);
   background: var(--bg-primary);
@@ -25,8 +29,7 @@
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
 }
 
-.print-dialog-header,
-.print-dialog-footer {
+.print-dialog-header {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -34,10 +37,18 @@
   gap: 18px;
   padding: 14px 20px;
   background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
-.print-dialog-header {
-  border-bottom: 1px solid var(--border);
+.print-dialog-footer {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 14px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
 }
 
 .print-dialog-header h2 {
@@ -325,9 +336,9 @@
 
 .print-status {
   min-width: 0;
-  flex: 1;
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .print-status[data-error="true"] {
@@ -340,6 +351,11 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.print-footer-actions {
+  grid-column: 2;
+  max-width: 100%;
 }
 
 .print-dialog-actions .btn-primary,
@@ -360,11 +376,182 @@
   cursor: default;
 }
 
+/* Manual two-sided second pass: shown only between the two print jobs. */
+.print-manual-panel {
+  display: block;
+  grid-column: 1 / -1;
+  width: min(900px, 100%);
+  min-width: min(560px, 100%);
+  max-height: min(590px, 58dvh);
+  margin-inline: auto;
+  overflow: auto;
+  padding: clamp(16px, 2vw, 24px);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-primary) 78%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: 12px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.2);
+}
+
+.print-manual-panel[hidden] {
+  display: none;
+}
+
+.print-manual-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.print-manual-step {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 26%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.print-manual-heading h3 {
+  color: var(--text-primary);
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.print-manual-text {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.print-manual-content {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.75fr) minmax(300px, 1fr);
+  align-items: center;
+  gap: clamp(16px, 3vw, 32px);
+  margin-top: 18px;
+}
+
+.print-manual-figure {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.print-manual-figure img {
+  display: block;
+  width: min(100%, 390px);
+  height: auto;
+  margin-inline: auto;
+}
+
+.print-manual-figure figcaption {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.print-manual-instructions h4 {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.print-manual-instructions ol {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding-left: 1.4rem;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.print-manual-instructions li::marker {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.print-manual-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 8px;
+}
+
+.print-manual-note svg {
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.print-manual-note p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.print-manual-note strong {
+  color: var(--text-primary);
+}
+
+.print-manual-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.print-manual-actions .btn-primary,
+.print-manual-actions .btn-secondary {
+  min-height: 42px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.print-manual-actions .btn-primary {
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+[data-theme="light"] .print-manual-actions .btn-primary {
+  color: #fff;
+}
+
+.print-dialog-panel :is(button, input, select):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .print-dialog-overlay { padding: 0; }
-  .print-dialog-panel { height: 100%; min-height: 0; border-radius: 0; }
+  .print-dialog-panel {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    border-radius: 0;
+  }
   .print-dialog-content { grid-template-columns: minmax(265px, 320px) minmax(0, 1fr); }
   .print-dialog-actions .print-download-btn { display: none; }
+  .print-manual-panel { max-height: min(590px, 62dvh); }
 }
 
 @media (max-width: 680px) {
@@ -373,40 +560,44 @@
   .print-dialog-content { grid-template-columns: 1fr; grid-template-rows: minmax(250px, 43%) minmax(250px, 57%); }
   .print-settings-panel { border-right: 0; border-bottom: 1px solid var(--border); }
   .print-preview-panel { padding: 8px; }
+  .print-dialog-footer { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .print-status { display: none; }
-  .print-dialog-actions { width: 100%; gap: 5px; }
-  .print-dialog-actions .btn-primary,
-  .print-dialog-actions .btn-secondary { padding: 8px; }
+  .print-footer-actions { grid-column: 1; width: 100%; flex-wrap: wrap; gap: 6px; }
+  .print-footer-actions .btn-primary,
+  .print-footer-actions .btn-secondary { flex: 1 1 140px; padding: 8px; }
   #btn-print-current { display: none; }
+  .print-manual-panel {
+    max-height: min(610px, 66dvh);
+    padding: 16px;
+  }
+  .print-manual-content { grid-template-columns: 1fr; gap: 16px; }
+  .print-manual-figure { max-width: 420px; width: 100%; margin-inline: auto; }
+  .print-manual-actions { justify-content: stretch; }
+  .print-manual-actions .btn-primary,
+  .print-manual-actions .btn-secondary { flex: 1 1 170px; }
+}
+
+@media (max-width: 420px) {
+  .print-manual-heading { grid-template-columns: 1fr; gap: 8px; }
+  .print-manual-step { justify-self: start; }
+  .print-manual-text { font-size: 14px; }
+  .print-manual-panel { padding: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .print-dialog-panel *,
+  .print-dialog-panel *::before,
+  .print-dialog-panel *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .print-spinner { animation: none; }
 }
 
 @media print {
   #print-dialog,
   #app { display: none !important; }
-}
-
-/* Manual two-sided second pass: shown only between the two print jobs. */
-.print-manual-panel {
-  display: flex;
-  flex: 1 1 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2, #f5f7fa);
-}
-
-.print-manual-panel[hidden] {
-  display: none;
-}
-
-.print-manual-text {
-  margin: 0;
-  flex: 1 1 320px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text-primary);
 }

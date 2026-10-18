@@ -18,6 +18,7 @@ const REQUIRED_FILES = [
   'THIRD-PARTY-NOTICES.md',
   'assets/icon.png',
   'src/index.html',
+  'src/manual-duplex-diagram.svg',
   'src/about.html',
   'src/renderer.js',
   'src/bundled-samples.cjs',

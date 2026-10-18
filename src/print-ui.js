@@ -152,6 +152,9 @@ export class PrintController {
     this.ui.dialog.addEventListener('click', (event) => {
       if (event.target === this.ui.dialog) this.close(true);
     });
+    this.ui.dialog.addEventListener('keydown', (event) => {
+      if (event.key === 'Tab') this.trapFocus(event);
+    });
     this.ui.submitButton.addEventListener('click', () => this.print(false));
     this.ui.currentButton.addEventListener('click', () => this.print(true));
     this.ui.downloadButton.addEventListener('click', () => this.downloadPdf());
@@ -191,6 +194,26 @@ export class PrintController {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = setTimeout(() => this.renderPreviewPage(), 120);
     });
+  }
+
+  trapFocus(event) {
+    // The app-wide shortcut handler keeps keys from reaching the document while
+    // this dialog is open. Keep Tab in the same modal too, including while the
+    // manual second-side panel replaces the normal print action.
+    const focusable = [...this.ui.dialog.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )].filter((control) => !control.closest('[hidden]') && window.getComputedStyle(control).display !== 'none');
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   async open() {
@@ -793,18 +816,21 @@ export class PrintController {
     const job = this.manualJob;
     if (!job) return;
     this.ui.manualText.textContent =
-      `Side one printed ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. For HP LaserJet 1018/1020/1022, ` +
-      `reload the stack printed-side down with the page’s bottom edge feeding first: rotate the stack 180° without ` +
-      `turning it face-up, and keep the sheets in the same order. Other printers may need a different feed direction; ` +
-      `check the printer’s manual-duplex guide or test a few pages. Then press “Print second side”.`;
+      `The first-side job was sent for ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. ` +
+      `Once those sheets have printed, reload the stack and send the second side.`;
     this.ui.manualPanel.hidden = false;
     this.ui.manualContinue.disabled = false;
     this.ui.manualCancel.disabled = false;
+    // Give keyboard and assistive-technology users a clear next step once the
+    // first native job has been accepted. The panel heading and status describe
+    // the state without asserting a printer-specific paper orientation.
+    this.ui.manualContinue.focus();
   }
 
-  clearManualJob() {
+  clearManualJob({ restoreFocus = false } = {}) {
     this.manualJob = null;
     if (this.ui?.manualPanel) this.ui.manualPanel.hidden = true;
+    if (restoreFocus) this.ui.cancelButton.focus();
   }
 
   async continueManualDuplex() {
@@ -817,7 +843,7 @@ export class PrintController {
     this.setStatus('Sending side two…');
     try {
       const destination = await this.sendNativeJob(api, job.backBytes, job.options);
-      this.clearManualJob();
+      this.clearManualJob({ restoreFocus: true });
       this.setStatus(`Side two sent to ${destination}. Check the sheet order on the printed output.`, false);
       this.onStatus(`Side two sent to ${destination}`);
     } catch (error) {
@@ -833,7 +859,7 @@ export class PrintController {
 
   cancelManualDuplex() {
     if (this.submitting || !this.manualJob) return;
-    this.clearManualJob();
+    this.clearManualJob({ restoreFocus: true });
     this.setStatus('Side two skipped. Only the odd pages were printed.', false);
     this.updateActionState();
   }

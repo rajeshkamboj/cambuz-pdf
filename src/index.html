@@ -524,14 +524,44 @@
 
       <footer class="print-dialog-footer">
         <p id="print-status" class="print-status" role="status" aria-live="polite"></p>
-        <div id="print-manual-panel" class="print-manual-panel" hidden>
-          <p id="print-manual-text" class="print-manual-text"></p>
-          <div class="print-dialog-actions">
-            <button id="btn-print-manual-cancel" class="btn-secondary">Skip second side</button>
-            <button id="btn-print-manual-continue" class="btn-primary">Print second side</button>
+
+        <section id="print-manual-panel" class="print-manual-panel" hidden aria-labelledby="print-manual-title" aria-describedby="print-manual-orientation-note">
+          <div class="print-manual-heading">
+            <span class="print-manual-step" aria-label="Manual duplex step 2 of 2">Step 2 of 2</span>
+            <div>
+              <h3 id="print-manual-title">Print the second side</h3>
+              <p id="print-manual-text" class="print-manual-text" role="status" aria-live="polite"></p>
+            </div>
           </div>
-        </div>
-        <div class="print-dialog-actions">
+
+          <div class="print-manual-content">
+            <figure class="print-manual-figure">
+              <img src="manual-duplex-diagram.svg" alt="Conceptual diagram: collect the output stack, keep it in order, then rotate and reload it into the input tray as directed by the printer guide.">
+              <figcaption>Concept only — use your printer guide for the correct paper orientation.</figcaption>
+            </figure>
+
+            <div class="print-manual-instructions">
+              <h4>Before you continue</h4>
+              <ol>
+                <li>Collect the printed stack from the output tray.</li>
+                <li>Keep the sheets together and in the same order.</li>
+                <li>Reload the stack in the input tray using your printer’s manual-duplex guidance.</li>
+              </ol>
+            </div>
+          </div>
+
+          <aside id="print-manual-orientation-note" class="print-manual-note" aria-label="Important paper orientation note">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.8L2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z"/></svg>
+            <p><strong>Paper orientation varies by printer model and feed tray.</strong> Follow the selected printer’s manual-duplex instructions, or test a small batch before printing an important document. Cambuz does not assume one universal reload orientation.</p>
+          </aside>
+
+          <div class="print-dialog-actions print-manual-actions">
+            <button id="btn-print-manual-cancel" class="btn-secondary" aria-label="Skip printing the second side">Skip second side</button>
+            <button id="btn-print-manual-continue" class="btn-primary" aria-label="Print the second side">Print second side</button>
+          </div>
+        </section>
+
+        <div class="print-dialog-actions print-footer-actions">
           <button id="btn-print-download" class="btn-secondary print-download-btn" disabled>Download print-ready PDF</button>
           <button id="btn-print-current" class="btn-secondary" disabled>Print current page</button>
           <button id="btn-print-cancel" class="btn-secondary">Cancel</button>
