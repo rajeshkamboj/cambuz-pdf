@@ -14,6 +14,7 @@ import {
   splitSheetsForManualDuplex,
   summarizePrintJob,
 } from './printing.js';
+import { getManualDuplexGuidance } from './manual-duplex-guidance.js';
 
 const MAX_INK_SAVER_PIXELS = 18_000_000;
 const MAX_INK_SAVER_DIMENSION = 10_000;
@@ -72,6 +73,7 @@ export class PrintController {
 
     this.ui = {
       dialog: element('print-dialog'),
+      dialogHeader: element('print-dialog-header'),
       toolbarButton: element('btn-print'),
       documentLabel: element('print-document-label'),
       closeButton: element('btn-print-close'),
@@ -113,8 +115,19 @@ export class PrintController {
       previewCanvas: element('print-preview-canvas'),
       previewCaption: element('print-preview-caption'),
       status: element('print-status'),
+      content: element('print-dialog-content'),
       manualPanel: element('print-manual-panel'),
+      manualTitle: element('print-manual-title'),
       manualText: element('print-manual-text'),
+      manualPrinterName: element('print-manual-printer-name'),
+      manualProfile: element('print-manual-profile'),
+      manualStepOneTitle: element('print-manual-step-one-title'),
+      manualStepOneText: element('print-manual-step-one-text'),
+      manualStepTwoTitle: element('print-manual-step-two-title'),
+      manualStepTwoText: element('print-manual-step-two-text'),
+      manualLoadingLabels: element('print-manual-loading-labels'),
+      manualNoteTitle: element('print-manual-note-title'),
+      manualNoteText: element('print-manual-note-text'),
       manualContinue: element('btn-print-manual-continue'),
       manualCancel: element('btn-print-manual-cancel'),
     };
@@ -218,7 +231,10 @@ export class PrintController {
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const dialogHeading = this.ui.dialog.getAttribute('aria-labelledby') === 'print-manual-title'
+      ? this.ui.manualTitle
+      : null;
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogHeading)) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -877,28 +893,59 @@ export class PrintController {
       backCount: split.backCount,
     };
     this.showManualPanel();
-    this.setStatus(`Side one sent to ${destination}. When it has finished, reload the printed stack and press “Print second side”.`, false);
+    this.setStatus(`Side one sent to ${destination}. After the sheets finish printing, follow the loading guidance and press “Continue”.`, false);
     this.onStatus(`Side one sent to ${destination}`);
   }
 
   showManualPanel() {
     const job = this.manualJob;
     if (!job) return;
-    this.ui.manualText.textContent =
-      `The first-side job was sent for ${job.frontCount} sheet${job.frontCount === 1 ? '' : 's'}. ` +
-      `Once those sheets have printed, reload the stack and send the second side.`;
+
+    const guidance = getManualDuplexGuidance(job.destination);
+    this.ui.dialog.dataset.manualPending = 'true';
+    this.ui.dialog.dataset.manualWorkflow = guidance.id;
+    this.ui.dialog.setAttribute('aria-labelledby', 'print-manual-title');
+    this.ui.dialogHeader.hidden = true;
+    this.ui.content.hidden = true;
+    this.ui.currentButton.hidden = true;
+    this.ui.submitButton.hidden = true;
     this.ui.manualPanel.hidden = false;
+
+    this.ui.manualText.textContent = 'First side printed — reload the paper to continue.';
+    this.ui.manualPrinterName.textContent = guidance.printerName;
+    this.ui.manualProfile.textContent = guidance.profileLabel;
+    this.ui.manualStepOneTitle.textContent = guidance.stepOne.title;
+    this.ui.manualStepOneText.textContent = guidance.stepOne.text;
+    this.ui.manualStepTwoTitle.textContent = guidance.stepTwo.title;
+    this.ui.manualStepTwoText.textContent = guidance.stepTwo.text;
+    this.ui.manualNoteTitle.textContent = guidance.noteTitle;
+    this.ui.manualNoteText.textContent = guidance.noteText;
+    this.ui.manualLoadingLabels.replaceChildren(...guidance.loadingLabels.map((label) => {
+      const tag = document.createElement('span');
+      tag.textContent = label;
+      return tag;
+    }));
+
     this.ui.manualContinue.disabled = false;
     this.ui.manualCancel.disabled = false;
-    // Give keyboard and assistive-technology users a clear next step once the
-    // first native job has been accepted. The panel heading and status describe
-    // the state without asserting a printer-specific paper orientation.
-    this.ui.manualContinue.focus();
+    // Focus the instruction heading so keyboard and screen-reader users start
+    // at the top of the guidance without the browser scrolling past Step 1 to
+    // reveal the Continue button on a narrow window.
+    this.ui.manualTitle.focus();
   }
 
   clearManualJob({ restoreFocus = false } = {}) {
     this.manualJob = null;
     if (this.ui?.manualPanel) this.ui.manualPanel.hidden = true;
+    if (this.ui?.dialogHeader) this.ui.dialogHeader.hidden = false;
+    if (this.ui?.content) this.ui.content.hidden = false;
+    if (this.ui?.currentButton) this.ui.currentButton.hidden = false;
+    if (this.ui?.submitButton) this.ui.submitButton.hidden = false;
+    if (this.ui?.dialog) {
+      delete this.ui.dialog.dataset.manualPending;
+      delete this.ui.dialog.dataset.manualWorkflow;
+      this.ui.dialog.setAttribute('aria-labelledby', 'print-dialog-title');
+    }
     if (restoreFocus) this.ui.cancelButton.focus();
   }
 
@@ -920,10 +967,10 @@ export class PrintController {
       this.onStatus(`Side two sent to ${destination}`);
     } catch (error) {
       if (error?.code === 'PRINT_CANCELLED') {
-        this.setStatus('Side two cancelled. Press “Print second side” to try again, or skip it.');
+        this.setStatus('Side two cancelled. Press “Continue” to try again, or skip it.');
       } else {
         console.error('Printing side two failed:', error);
-        this.setStatus(`Side two failed: ${error.message}. Press “Print second side” to try again, or skip it.`, true);
+        this.setStatus(`Side two failed: ${error.message}. Press “Continue” to try again, or skip it.`, true);
       }
     } finally {
       this.setSubmitting(false);
