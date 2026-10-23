@@ -363,7 +363,7 @@
   <!-- Phase 3 print preview and settings -->
   <div id="print-dialog" class="print-dialog-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="print-dialog-title">
     <section class="print-dialog-panel">
-      <header class="print-dialog-header">
+      <header id="print-dialog-header" class="print-dialog-header">
         <div>
           <h2 id="print-dialog-title">Print preview</h2>
           <p id="print-document-label" class="print-document-label"></p>
@@ -375,7 +375,7 @@
         </button>
       </header>
 
-      <div class="print-dialog-content">
+      <div id="print-dialog-content" class="print-dialog-content">
         <aside class="print-settings-panel" aria-label="Print settings">
           <div class="print-field">
             <label for="print-preset">Preset</label>
@@ -522,46 +522,109 @@
         </main>
       </div>
 
+      <section id="print-manual-panel" class="print-manual-panel" hidden aria-labelledby="print-manual-title" aria-describedby="print-manual-text print-manual-note">
+        <header class="print-manual-header">
+          <div class="print-manual-title-group">
+            <p class="print-manual-eyebrow">Manual duplex · Second pass</p>
+            <h3 id="print-manual-title" tabindex="-1">Print the second side</h3>
+            <p id="print-manual-text" class="print-manual-text" role="status" aria-live="polite">First side printed — reload the paper to continue.</p>
+          </div>
+          <div class="print-manual-context">
+            <span id="print-manual-step" class="print-manual-step" aria-label="Step 2 of 2">Step 2 of 2</span>
+            <div class="print-manual-printer">
+              <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6zM18 12h.01"/></svg>
+              <div class="print-manual-printer-copy">
+                <span class="print-manual-printer-label">Printer</span>
+                <strong id="print-manual-printer-name">Printer not identified</strong>
+                <span id="print-manual-profile">Printer-specific feed not verified</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <ol class="print-manual-steps" aria-label="Three steps to print the second side">
+          <li class="print-manual-card">
+            <div class="print-manual-card-heading">
+              <span class="print-manual-number" aria-hidden="true">1</span>
+              <h4 id="print-manual-step-one-title">Collect the printed stack</h4>
+            </div>
+            <svg class="print-manual-art" aria-hidden="true" viewBox="0 0 220 112" fill="none">
+              <path d="M47 16h126a8 8 0 0 1 8 8v44H39V24a8 8 0 0 1 8-8Z" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="3"/>
+              <path d="M55 30h110v8H55z" fill="var(--bg-secondary)"/>
+              <path d="M39 55h142v17H39z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="2"/>
+              <path d="m37 72 142 0 18 22H22z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="3" stroke-linejoin="round"/>
+              <path d="M62 45h98v34H62z" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2.5"/>
+              <path d="M68 51h86v5H68z" fill="var(--bg-surface)"/>
+              <path d="M76 64h40M76 70h51" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+              <path d="M45 99h131" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="163" cy="48" r="3" fill="var(--accent)"/>
+            </svg>
+            <p id="print-manual-step-one-text" class="print-manual-card-copy">Collect every sheet from the output bin. Keep the sheets in the same order, and do not discard blank sheets.</p>
+          </li>
+
+          <li class="print-manual-card">
+            <div class="print-manual-card-heading">
+              <span class="print-manual-number" aria-hidden="true">2</span>
+              <h4 id="print-manual-step-two-title">Check the printer’s feed guide</h4>
+            </div>
+            <svg class="print-manual-art" aria-hidden="true" viewBox="0 0 220 112" fill="none">
+              <path d="M48 14h124a8 8 0 0 1 8 8v43H40V22a8 8 0 0 1 8-8Z" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="3"/>
+              <path d="M56 28h108v8H56z" fill="var(--bg-secondary)"/>
+              <path d="M42 58h136v17H42z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="2"/>
+              <path d="m45 76 131 0 20 24H25z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="3" stroke-linejoin="round"/>
+              <path d="M64 53h93v7H64zM60 60h101v7H60zM56 67h109v7H56z" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M74 49h74" stroke="var(--text-secondary)" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>
+              <path d="M110 24v16m-6-6 6 6 6-6" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <g class="print-manual-generic-visual">
+                <circle cx="169" cy="45" r="12" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2"/>
+                <path d="M169 39v7m0 4h.01" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+              </g>
+              <g class="print-manual-hp-visual">
+                <circle cx="169" cy="45" r="12" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2"/>
+                <path d="m163 45 4 4 8-9" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+            </svg>
+              <div id="print-manual-loading-labels" class="print-manual-loading-labels" role="group" aria-label="Paper loading guidance">
+              <span>Feed direction varies</span>
+              <span>Check this printer’s guide</span>
+            </div>
+            <p id="print-manual-step-two-text" class="print-manual-card-copy">Cambuz cannot confirm this printer’s feed direction. Check its own instructions for how to orient the stack and which side should face up or down before loading.</p>
+          </li>
+
+          <li class="print-manual-card print-manual-card-continue">
+            <div class="print-manual-card-heading">
+              <span class="print-manual-number" aria-hidden="true">3</span>
+              <h4>Continue printing</h4>
+            </div>
+            <div class="print-manual-continue-art" aria-hidden="true">
+              <svg class="print-manual-continue-printer" viewBox="0 0 46 42" fill="none">
+                <path d="M12 14V4h22v10M12 31H8a4 4 0 0 1-4-4v-9a4 4 0 0 1 4-4h30a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4h-4" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+                <path d="M12 25h22v13H12z" fill="var(--bg-primary)" stroke="currentColor" stroke-width="2.5"/>
+                <path d="M17 30h12M17 34h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="36" cy="18" r="1.5" fill="currentColor"/>
+              </svg>
+              <span class="print-manual-continue-chip">Continue <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <p class="print-manual-card-copy">Click <strong>Continue</strong> below to start printing the second sides.</p>
+          </li>
+        </ol>
+
+        <aside id="print-manual-note" class="print-manual-note" aria-label="Printer-specific loading guidance">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01" stroke-linecap="round"/></svg>
+          <div>
+            <strong id="print-manual-note-title">Loading instructions vary by printer</strong>
+            <p id="print-manual-note-text">The printer model was not identified. Check the printer’s own paper-loading guide before reloading; do not guess which side faces up or down.</p>
+          </div>
+        </aside>
+
+        <div class="print-dialog-actions print-manual-actions">
+          <button id="btn-print-manual-cancel" class="btn-secondary" aria-label="Skip printing the second side">Skip second side</button>
+          <button id="btn-print-manual-continue" class="btn-primary" aria-label="Continue to print the second sides">Continue</button>
+        </div>
+      </section>
+
       <footer class="print-dialog-footer">
         <p id="print-status" class="print-status" role="status" aria-live="polite"></p>
-
-        <section id="print-manual-panel" class="print-manual-panel" hidden aria-labelledby="print-manual-title" aria-describedby="print-manual-orientation-note">
-          <div class="print-manual-heading">
-            <span class="print-manual-step" aria-label="Manual duplex step 2 of 2">Step 2 of 2</span>
-            <div>
-              <h3 id="print-manual-title">Print the second side</h3>
-              <p id="print-manual-text" class="print-manual-text" role="status" aria-live="polite"></p>
-            </div>
-          </div>
-
-          <div class="print-manual-content">
-            <figure class="print-manual-figure">
-              <img src="manual-duplex-diagram.svg" alt="Separate Output tray and Input tray areas connected by a straight arrow showing the stack moving from output to input.">
-              <figcaption>The arrow shows stack movement only. Follow the loading direction verified for your printer.</figcaption>
-            </figure>
-
-            <div class="print-manual-instructions">
-              <h4>Before you continue</h4>
-              <ol>
-                <li>Collect the printed stack from the output tray.</li>
-                <li>Keep all sheets together in the same order.</li>
-                <li>Reload the stack into the input tray using the loading direction verified for the selected printer workflow.</li>
-                <li>Press <strong>Print second side</strong> to continue.</li>
-              </ol>
-            </div>
-          </div>
-
-          <aside id="print-manual-orientation-note" class="print-manual-note" aria-label="Paper loading direction note">
-            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.8L2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0z"/></svg>
-            <p>Paper loading direction can vary by printer. Follow the instructions verified for your printer.</p>
-          </aside>
-
-          <div class="print-dialog-actions print-manual-actions">
-            <button id="btn-print-manual-cancel" class="btn-secondary" aria-label="Skip printing the second side">Skip second side</button>
-            <button id="btn-print-manual-continue" class="btn-primary" aria-label="Print the second side">Print second side</button>
-          </div>
-        </section>
-
         <div class="print-dialog-actions print-footer-actions">
           <button id="btn-print-download" class="btn-secondary print-download-btn" disabled>Download print-ready PDF</button>
           <button id="btn-print-current" class="btn-secondary" disabled>Print current page</button>

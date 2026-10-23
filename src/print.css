@@ -376,163 +376,409 @@
   cursor: default;
 }
 
-/* Manual two-sided second pass: shown only between the two print jobs. */
-.print-manual-panel {
-  display: block;
-  grid-column: 1 / -1;
-  width: min(900px, 100%);
-  min-width: min(560px, 100%);
-  max-height: min(590px, 58dvh);
-  margin-inline: auto;
-  overflow: auto;
-  padding: clamp(16px, 2vw, 24px);
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-primary) 78%, var(--bg-surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
-  border-radius: 12px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.2);
+/* Manual two-sided second pass: a focused, printer-aware instruction state. */
+#print-dialog[data-manual-pending="true"] {
+  padding: 18px;
 }
 
-.print-manual-panel[hidden] {
+#print-dialog[data-manual-pending="true"] .print-dialog-panel {
+  width: min(1040px, calc(100vw - 36px));
+  height: auto;
+  min-height: 0;
+  max-height: min(760px, calc(100dvh - 36px));
+}
+
+.print-dialog-header[hidden],
+.print-dialog-content[hidden],
+#print-dialog button[hidden] {
+  display: none !important;
+}
+
+#print-dialog[data-manual-pending="true"] .print-dialog-header,
+#print-dialog[data-manual-pending="true"] .print-dialog-content {
   display: none;
 }
 
-.print-manual-heading {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
+#print-dialog[data-manual-pending="true"] .print-dialog-footer {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 11px 18px;
+}
+
+#print-dialog[data-manual-pending="true"] #btn-print-current,
+#print-dialog[data-manual-pending="true"] #btn-print-submit {
+  display: none;
+}
+
+.print-manual-panel {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
   gap: 12px;
+  overflow: auto;
+  padding: clamp(14px, 2vw, 22px);
+  color: var(--text-primary);
+  background: var(--bg-primary);
 }
 
-.print-manual-step {
-  display: inline-flex;
+.print-manual-panel[hidden] {
+  display: none !important;
+}
+
+.print-manual-header {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
   align-items: center;
-  min-height: 27px;
-  padding: 4px 8px;
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent) 26%, var(--bg-secondary));
-  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border));
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  gap: 18px;
 }
 
-.print-manual-heading h3 {
+.print-manual-title-group {
+  min-width: 0;
+}
+
+.print-manual-eyebrow {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.print-manual-title-group h3 {
   color: var(--text-primary);
-  font-size: clamp(18px, 2vw, 22px);
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: clamp(20px, 2.4vw, 26px);
+  font-weight: 750;
+  line-height: 1.15;
+}
+
+.print-manual-title-group h3:focus {
+  outline: none;
 }
 
 .print-manual-text {
   margin-top: 5px;
   color: var(--text-secondary);
-  font-size: 15px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.print-manual-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+.print-manual-context {
+  display: flex;
   align-items: center;
-  gap: clamp(16px, 3vw, 32px);
-  margin-top: 18px;
-}
-
-.print-manual-figure {
+  justify-content: flex-end;
+  gap: 10px;
   min-width: 0;
-  margin: 0;
-  padding: 10px;
-  text-align: center;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 10px;
 }
 
-.print-manual-figure img {
-  display: block;
-  width: min(100%, 520px);
-  height: auto;
-  margin-inline: auto;
-}
-
-.print-manual-figure figcaption {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.print-manual-instructions h4 {
+.print-manual-step {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 9px;
   color: var(--text-primary);
-  font-size: 15px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.print-manual-printer {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  max-width: 280px;
+  color: var(--accent);
+}
+
+.print-manual-printer > svg {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.print-manual-printer-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  color: var(--text-secondary);
+  line-height: 1.25;
+}
+
+.print-manual-printer-label {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.print-manual-printer-copy strong {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 12px;
   font-weight: 700;
 }
 
-.print-manual-instructions ol {
-  display: grid;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding-left: 1.4rem;
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 1.45;
+.print-manual-printer-copy > span:last-child {
+  color: var(--text-secondary);
+  font-size: 10px;
 }
 
-.print-manual-instructions li::marker {
+.print-manual-steps {
+  --manual-step-gap: 24px;
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--manual-step-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.print-manual-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.print-manual-card:not(:last-child)::after,
+.print-manual-card:not(:last-child)::before {
+  position: absolute;
+  z-index: 2;
+  content: "";
+  pointer-events: none;
+}
+
+.print-manual-card:not(:last-child)::after {
+  top: 54%;
+  right: calc(-1 * var(--manual-step-gap) + 2px);
+  width: calc(var(--manual-step-gap) - 4px);
+  height: 2px;
+  background: var(--accent);
+}
+
+.print-manual-card:not(:last-child)::before {
+  top: calc(54% - 4px);
+  right: calc(-1 * var(--manual-step-gap) + 1px);
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+.print-manual-card-heading {
+  display: grid;
+  grid-template-columns: 27px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+}
+
+.print-manual-number {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  color: var(--bg-secondary);
+  background: var(--accent);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.print-manual-card h4 {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.print-manual-art {
+  display: block;
+  width: 100%;
+  height: 84px;
+  flex: 0 0 84px;
+  overflow: visible;
+  color: var(--text-primary);
+}
+
+.print-manual-hp-visual,
+.print-manual-generic-visual {
+  display: none;
+}
+
+#print-dialog[data-manual-workflow="hp-laserjet-1020"] .print-manual-hp-visual {
+  display: initial;
+}
+
+#print-dialog[data-manual-workflow="unverified"] .print-manual-generic-visual {
+  display: initial;
+}
+
+.print-manual-card-copy {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.print-manual-card-copy strong {
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+.print-manual-loading-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.print-manual-loading-labels span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary));
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.print-manual-continue-art {
+  display: flex;
+  height: 84px;
+  flex: 0 0 84px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   color: var(--accent);
-  font-weight: 800;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-primary));
+  border: 1px dashed color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: 9px;
+}
+
+.print-manual-continue-printer {
+  width: 38px;
+  height: 38px;
+}
+
+.print-manual-continue-chip {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  color: #11111b;
+  background: var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 24%, transparent);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.print-manual-continue-chip svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+[data-theme="light"] .print-manual-continue-chip {
+  color: #fff;
 }
 
 .print-manual-note {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  flex: 0 0 auto;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  margin-top: 18px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
+  border-radius: 9px;
 }
 
-.print-manual-note svg {
+#print-dialog[data-manual-workflow="unverified"] .print-manual-note {
+  border-color: color-mix(in srgb, #f9c74f 55%, var(--border));
+  background: color-mix(in srgb, #f9c74f 10%, var(--bg-secondary));
+}
+
+.print-manual-note > svg {
   margin-top: 1px;
   color: var(--accent);
 }
 
-.print-manual-note p {
-  font-size: 13px;
-  line-height: 1.45;
+#print-dialog[data-manual-workflow="unverified"] .print-manual-note > svg {
+  color: #f9c74f;
+}
+
+[data-theme="light"] #print-dialog[data-manual-workflow="unverified"] .print-manual-note > svg {
+  color: #8a5b00;
 }
 
 .print-manual-note strong {
+  display: block;
+  margin-bottom: 2px;
   color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.print-manual-note p {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .print-manual-actions {
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 0;
 }
 
 .print-manual-actions .btn-primary,
 .print-manual-actions .btn-secondary {
-  min-height: 42px;
-  padding: 9px 16px;
-  font-size: 14px;
-  font-weight: 650;
+  min-height: 39px;
+  padding: 8px 15px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .print-manual-actions .btn-primary {
   box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-[data-theme="light"] .print-manual-actions .btn-primary {
-  color: #fff;
+.print-manual-actions .btn-primary:disabled,
+.print-manual-actions .btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .print-dialog-panel :is(button, input, select):focus-visible {
@@ -550,12 +796,28 @@
     border-radius: 0;
   }
   .print-dialog-content { grid-template-columns: minmax(265px, 320px) minmax(0, 1fr); }
-  .print-manual-panel { max-height: min(590px, 62dvh); }
+  #print-dialog[data-manual-pending="true"] {
+    padding: 18px;
+  }
+  #print-dialog[data-manual-pending="true"] .print-dialog-panel {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: calc(100dvh - 36px);
+    border-radius: 14px;
+  }
 }
 
 @media (max-width: 800px) {
-  .print-manual-content { grid-template-columns: 1fr; gap: 16px; }
-  .print-manual-figure { max-width: 540px; width: 100%; margin-inline: auto; }
+  .print-manual-steps {
+    --manual-step-gap: 22px;
+  }
+  .print-manual-card {
+    padding: 10px;
+  }
+  .print-manual-card-copy {
+    font-size: 11.5px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -570,22 +832,134 @@
   .print-footer-actions .btn-primary,
   .print-footer-actions .btn-secondary { flex: 1 1 140px; padding: 8px; }
   #btn-print-current { display: none; }
-  .print-manual-panel {
-    max-height: min(610px, 66dvh);
-    padding: 16px;
+  .print-manual-header {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 10px;
   }
-  .print-manual-content { grid-template-columns: 1fr; gap: 16px; }
-  .print-manual-figure { max-width: 540px; width: 100%; margin-inline: auto; }
+  .print-manual-context {
+    width: 100%;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+  }
+  .print-manual-printer {
+    max-width: none;
+  }
+  .print-manual-steps {
+    --manual-step-gap: 28px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .print-manual-card:not(:last-child)::after {
+    top: auto;
+    right: auto;
+    bottom: -17px;
+    left: calc(50% - 1px);
+    width: 2px;
+    height: 16px;
+  }
+  .print-manual-card:not(:last-child)::before {
+    top: auto;
+    right: auto;
+    bottom: -25px;
+    left: calc(50% - 4px);
+    border-top: 0;
+    border-right: 2px solid var(--accent);
+    border-bottom: 2px solid var(--accent);
+    border-left: 0;
+    transform: rotate(45deg);
+  }
+  .print-manual-art,
+  .print-manual-continue-art {
+    height: 94px;
+    flex-basis: 94px;
+  }
+  .print-manual-card-copy {
+    font-size: 13px;
+  }
   .print-manual-actions { justify-content: stretch; }
   .print-manual-actions .btn-primary,
-  .print-manual-actions .btn-secondary { flex: 1 1 170px; }
+  .print-manual-actions .btn-secondary { flex: 1 1 150px; }
+  #print-dialog[data-manual-pending="true"] {
+    padding: 18px;
+  }
+  #print-dialog[data-manual-pending="true"] .print-dialog-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 420px) {
-  .print-manual-heading { grid-template-columns: 1fr; gap: 8px; }
-  .print-manual-step { justify-self: start; }
-  .print-manual-text { font-size: 14px; }
-  .print-manual-panel { padding: 14px; }
+  #print-dialog[data-manual-pending="true"] {
+    padding: 10px;
+  }
+  #print-dialog[data-manual-pending="true"] .print-dialog-panel {
+    max-height: calc(100dvh - 20px);
+  }
+  .print-manual-panel {
+    padding: 13px;
+  }
+  .print-manual-title-group h3 {
+    font-size: 21px;
+  }
+}
+
+@media (max-height: 620px) and (min-width: 681px) {
+  .print-manual-panel {
+    gap: 7px;
+    padding: 8px 16px;
+  }
+  .print-manual-header {
+    gap: 12px;
+  }
+  .print-manual-eyebrow {
+    margin-bottom: 2px;
+    font-size: 10px;
+  }
+  .print-manual-title-group h3 {
+    font-size: 21px;
+  }
+  .print-manual-text {
+    margin-top: 3px;
+    font-size: 12px;
+  }
+  .print-manual-context {
+    gap: 5px;
+  }
+  .print-manual-steps {
+    --manual-step-gap: 20px;
+  }
+  .print-manual-card {
+    gap: 5px;
+    padding: 8px;
+  }
+  .print-manual-art,
+  .print-manual-continue-art {
+    height: 68px;
+    flex-basis: 68px;
+  }
+  .print-manual-card-copy {
+    font-size: 12px;
+    line-height: 1.32;
+  }
+  .print-manual-loading-labels {
+    gap: 4px;
+  }
+  .print-manual-loading-labels span {
+    min-height: 20px;
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+  .print-manual-note {
+    padding: 7px 9px;
+  }
+  .print-manual-note p {
+    font-size: 11px;
+  }
+  .print-manual-actions .btn-primary,
+  .print-manual-actions .btn-secondary {
+    min-height: 35px;
+    padding-block: 6px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
