@@ -411,6 +411,21 @@ export async function buildPrintPdf({
   const itemCount = selectedPages.length;
   for (const sheetPlan of plan.sheets) {
     const sheet = output.addPage([plan.paperWidth, plan.paperHeight]);
+    // PDF page boxes have no implicit white fill: transparent areas are
+    // otherwise left for the downstream viewer/driver to composite. Some
+    // printer pipelines (notably legacy PCL drivers) mishandle that
+    // transparency and can render the unpainted page as black. Establish the
+    // physical paper's white backdrop before placing source content. This is
+    // underneath the complete source page, so intentional dark backgrounds,
+    // grayscale imagery and transparency within page artwork remain intact.
+    sheet.drawRectangle({
+      x: 0,
+      y: 0,
+      width: plan.paperWidth,
+      height: plan.paperHeight,
+      color: pdfLib.rgb(1, 1, 1),
+      opacity: 1,
+    });
     for (const item of sheetPlan.items) {
       const embedded = pageToEmbedded.get(item.pageNumber);
       const embeddedPage = embedded.page;

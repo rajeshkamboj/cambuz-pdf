@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import UPNGModule from '@pdf-lib/upng';
+import { createCanvas, DOMMatrix, ImageData, Path2D } from '@napi-rs/canvas';
 import * as pdfjsLib from '../node_modules/pdfjs-dist/legacy/build/pdf.mjs';
 import { PDFDocument, degrees } from 'pdf-lib';
 import {
@@ -28,6 +29,10 @@ import {
   splitSheetsForManualDuplex,
   summarizePrintJob,
 } from '../src/printing.js';
+
+globalThis.DOMMatrix ||= DOMMatrix;
+globalThis.ImageData ||= ImageData;
+globalThis.Path2D ||= Path2D;
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const standardFontDataUrl = pathToFileURL(path.join(ROOT, 'node_modules', 'pdfjs-dist', 'standard_fonts') + path.sep).href;
@@ -85,6 +90,23 @@ async function extractPages(bytes) {
   }
   await doc.destroy();
   return pages;
+}
+
+async function rasterPage(bytes, pageNumber = 1) {
+  const doc = await pdfjsLib.getDocument({ data: bytes.slice(), standardFontDataUrl, useSystemFonts: true }).promise;
+  const page = await doc.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  const context = canvas.getContext('2d');
+  await page.render({ canvasContext: context, viewport, background: 'rgb(255,255,255)' }).promise;
+  const pixels = new Uint8Array(context.getImageData(0, 0, canvas.width, canvas.height).data);
+  const result = { width: canvas.width, height: canvas.height, pixels };
+  await doc.destroy();
+  return result;
+}
+function pixelAt(image, x, y) {
+  const offset = (y * image.width + x) * 4;
+  return [...image.pixels.slice(offset, offset + 4)];
 }
 
 section('1. Page selection and range validation');
@@ -224,6 +246,39 @@ const punjabiJob = await buildPrintPdf({
 });
 const punjabiTexts = await extractPages(punjabiJob.bytes);
 assert(punjabiTexts[0].includes('ਪੰਜਾਬ'), 'Punjabi text survives print-ready PDF composition');
+
+// End-to-end artifact regression: assemble varied source artwork using pdf-lib,
+// feed it through production buildPrintPdf(), then independently rasterize the
+// resulting PDF through PDF.js and inspect actual pixels (not PDF operators).
+{
+  const fixture = await PDFDocument.create();
+  const normal = fixture.addPage([300, 400]);
+  // Small vector bars stand in for printed glyph strokes; existing assertions
+  // above separately verify searchable Hindi/Punjabi text survives composition.
+  normal.drawRectangle({ x: 24, y: 350, width: 140, height: 3, color: (await import('pdf-lib')).rgb(0, 0, 0) });
+  normal.drawRectangle({ x: 24, y: 358, width: 90, height: 3, color: (await import('pdf-lib')).rgb(0, 0, 0) });
+  normal.drawRectangle({ x: 30, y: 270, width: 100, height: 50, color: (await import('pdf-lib')).rgb(0.4, 0.4, 0.4) });
+  normal.drawRectangle({ x: 150, y: 250, width: 80, height: 80, color: (await import('pdf-lib')).rgb(1, 0, 0), opacity: 0.5 });
+  const dark = fixture.addPage([300, 400]);
+  dark.drawRectangle({ x: 0, y: 0, width: 300, height: 400, color: (await import('pdf-lib')).rgb(0.05, 0.08, 0.12) });
+  dark.drawRectangle({ x: 24, y: 350, width: 140, height: 3, color: (await import('pdf-lib')).rgb(1, 1, 1) });
+  const composed = await buildPrintPdf({
+    sourceBytes: new Uint8Array(await fixture.save()),
+    settings: { ...PRINT_DEFAULTS, pageMode: 'all', paperSize: 'A4', orientation: 'portrait' },
+  });
+  const outputPdf = await PDFDocument.load(composed.bytes);
+  assert(outputPdf.getPageCount() === 2, 'real composed output retains the two-page fixture');
+  const page1 = await rasterPage(composed.bytes, 1);
+  const whiteCorner = pixelAt(page1, 5, 5);
+  assert(whiteCorner[0] > 245 && whiteCorner[1] > 245 && whiteCorner[2] > 245, 'rasterized print artifact has a white physical-sheet background');
+  const page1Ink = page1.pixels.filter((_, index) => index % 4 === 0 && page1.pixels[index] < 100).length;
+  assert(page1Ink > 50, 'rasterized artifact retains visible black text / darker artwork');
+  const page2 = await rasterPage(composed.bytes, 2);
+  const darkInterior = pixelAt(page2, 140, 140);
+  assert(darkInterior[0] < 80 && darkInterior[1] < 100 && darkInterior[2] < 130, 'legitimate dark page background remains dark above the white sheet fill');
+  const pageSize = outputPdf.getPage(0).getSize();
+  assert(Math.abs(pageSize.width - 595.28) < 1 && Math.abs(pageSize.height - 841.89) < 1, 'raster-tested artifact retains A4 portrait media dimensions');
+}
 
 section('4. PDF page rotation and Ink Saver output');
 const rotatable = await PDFDocument.load(welcome);
