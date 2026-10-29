@@ -14,9 +14,11 @@ contextBridge.exposeInMainWorld('cambuzAPI', {
   // then is returned ({ file }) instead of being pushed.
   rendererReady: () => ipcRenderer.invoke('renderer-ready'),
   onOpenFilePath: (callback) => ipcRenderer.on('open-file-path', callback),
-  getPrinters: () => ipcRenderer.invoke('list-printers'),
-  printPdf: (pdfBytes, options) => ipcRenderer.invoke('print-pdf', pdfBytes, options),
-  cancelPrint: (jobId) => ipcRenderer.invoke('cancel-print', jobId),
+  // Printing is an explicit handoff of the prepared artifact. The registered
+  // PDF viewer owns printer selection, driver settings, duplex and cancellation.
+  openPdfInSystemViewer: (pdfBytes, options) => ipcRenderer.invoke('open-pdf-in-system-viewer', pdfBytes, options),
+  savePrintReadyPdf: (pdfBytes, options) => ipcRenderer.invoke('save-print-ready-pdf', pdfBytes, options),
+  onSystemViewerUnavailable: (callback) => ipcRenderer.on('system-viewer-unavailable', callback),
   onMenuPrint: (callback) => ipcRenderer.on('menu-print', callback),
   onMenuOpenFile: (callback) => ipcRenderer.on('menu-open-file', callback),
   onMenuCloseFile: (callback) => ipcRenderer.on('menu-close-file', callback),

@@ -590,7 +590,7 @@ async function main() {
     const shell = await evaluate(`({
       title: document.title,
       protocol: location.protocol,
-      bridge: ['openFile', 'readFile', 'readSample', 'printPdf', 'savePdf', 'rendererReady', 'onOpenFilePath'].every((name) => typeof window.cambuzAPI?.[name] === 'function'),
+      bridge: ['openFile', 'readFile', 'readSample', 'openPdfInSystemViewer', 'savePrintReadyPdf', 'savePdf', 'rendererReady', 'onOpenFilePath'].every((name) => typeof window.cambuzAPI?.[name] === 'function'),
     })`);
     record('window title is "Cambuz PDF Reader"', shell.title === 'Cambuz PDF Reader', shell.title);
     record('preload bridge (window.cambuzAPI) is exposed', shell.bridge);

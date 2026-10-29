@@ -360,15 +360,15 @@
     </div>
   </div>
 
-  <!-- Phase 3 print preview and settings -->
+  <!-- Print-ready PDF preparation, preview and system-viewer handoff -->
   <div id="print-dialog" class="print-dialog-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="print-dialog-title">
     <section class="print-dialog-panel">
-      <header id="print-dialog-header" class="print-dialog-header">
+      <header class="print-dialog-header">
         <div>
-          <h2 id="print-dialog-title">Print preview</h2>
+          <h2 id="print-dialog-title">Prepare PDF for printing</h2>
           <p id="print-document-label" class="print-document-label"></p>
         </div>
-        <button id="btn-print-close" class="toolbar-btn" title="Close print preview (Esc)" aria-label="Close print preview">
+        <button id="btn-print-close" class="toolbar-btn" title="Close print preparation (Esc)" aria-label="Close print preparation">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
@@ -376,9 +376,15 @@
       </header>
 
       <div id="print-dialog-content" class="print-dialog-content">
-        <aside class="print-settings-panel" aria-label="Print settings">
+        <aside class="print-settings-panel" aria-label="PDF preparation settings">
+          <section class="print-system-note" aria-labelledby="print-system-note-title">
+            <h3 id="print-system-note-title">Physical printing uses your system PDF viewer</h3>
+            <p>Cambuz prepares and previews the PDF but does not submit it directly to a printer. Open the prepared file below, then use the viewer’s Print command to choose a printer and its device-specific settings.</p>
+            <p><strong>Manual duplex:</strong> the system viewer or printer driver controls both passes. Follow its prompts and your printer’s paper-loading guide; Cambuz does not rotate or reorder the second pass.</p>
+          </section>
+
           <div class="print-field">
-            <label for="print-preset">Preset</label>
+            <label for="print-preset">Preparation preset</label>
             <select id="print-preset">
               <option value="custom">Custom</option>
               <option value="a4-fit">A4 · Fit to page</option>
@@ -390,7 +396,7 @@
           </div>
 
           <fieldset class="print-field print-pages-fieldset">
-            <legend>Pages</legend>
+            <legend>Pages in prepared PDF</legend>
             <label class="print-radio-row">
               <input type="radio" name="print-page-mode" value="current">
               <span>Current page <span id="print-current-page-label"></span></span>
@@ -407,20 +413,7 @@
             <p id="print-range-error" class="print-inline-error" role="alert"></p>
           </fieldset>
 
-          <div class="print-field">
-            <label for="print-printer">Printer</label>
-            <div class="print-printer-row">
-              <select id="print-printer" aria-describedby="print-printer-help"></select>
-              <button id="btn-refresh-printers" class="toolbar-btn print-refresh-btn" title="Refresh printers" aria-label="Refresh printers">↻</button>
-            </div>
-            <p id="print-printer-help" class="print-help"></p>
-          </div>
-
           <div class="print-field print-field-inline">
-            <div>
-              <label for="print-copies">Copies</label>
-              <input id="print-copies" type="number" min="1" max="99" step="1" value="1">
-            </div>
             <div>
               <label for="print-paper">Paper size</label>
               <select id="print-paper">
@@ -432,24 +425,6 @@
                 <option value="Tabloid">Tabloid</option>
               </select>
             </div>
-          </div>
-
-          <div class="print-field">
-            <label for="print-duplex">Print on both sides</label>
-            <select id="print-duplex" aria-describedby="print-duplex-help">
-              <option value="simplex">Off · one-sided</option>
-              <option value="longEdge">Automatic · flip on long edge (book)</option>
-              <option value="shortEdge">Automatic · flip on short edge (calendar)</option>
-              <option value="manual">Manual · no duplex unit (two passes, long edge)</option>
-            </select>
-            <p id="print-duplex-help" class="print-help">Automatic needs a printer with a duplex unit. Manual prints the odd pages first, then asks you to reload them; the correct feed orientation depends on your printer model.</p>
-          </div>
-          <label class="print-checkbox-row print-field">
-            <input id="print-collate" type="checkbox" checked>
-            <span><strong>Collate copies</strong><small>Print each complete set in order when making multiple copies.</small></span>
-          </label>
-
-          <div class="print-field print-field-inline">
             <div>
               <label for="print-orientation">Orientation</label>
               <select id="print-orientation">
@@ -457,14 +432,15 @@
                 <option value="landscape">Landscape</option>
               </select>
             </div>
-            <div>
-              <label for="print-pages-per-sheet">Pages per sheet</label>
-              <select id="print-pages-per-sheet">
-                <option value="1">1 page</option>
-                <option value="2">2 pages</option>
-                <option value="4">4 pages</option>
-              </select>
-            </div>
+          </div>
+
+          <div class="print-field">
+            <label for="print-pages-per-sheet">Pages per prepared sheet</label>
+            <select id="print-pages-per-sheet">
+              <option value="1">1 page</option>
+              <option value="2">2 pages</option>
+              <option value="4">4 pages</option>
+            </select>
           </div>
 
           <div class="print-field">
@@ -502,13 +478,13 @@
           <p id="print-settings-error" class="print-inline-error" role="alert"></p>
         </aside>
 
-        <main class="print-preview-panel" aria-label="Print preview">
+        <main class="print-preview-panel" aria-label="Prepared PDF preview">
           <div class="print-preview-toolbar">
             <span id="print-preview-summary" aria-live="polite">Preparing preview…</span>
             <div class="print-preview-page-nav">
-              <button id="btn-print-preview-prev" class="toolbar-btn" title="Previous preview sheet" disabled>‹</button>
+              <button id="btn-print-preview-prev" class="toolbar-btn" title="Previous prepared sheet" disabled>‹</button>
               <span><span id="print-preview-page">0</span> / <span id="print-preview-total">0</span></span>
-              <button id="btn-print-preview-next" class="toolbar-btn" title="Next preview sheet" disabled>›</button>
+              <button id="btn-print-preview-next" class="toolbar-btn" title="Next prepared sheet" disabled>›</button>
             </div>
           </div>
           <div id="print-preview-stage" class="print-preview-stage">
@@ -516,124 +492,22 @@
               <div class="print-spinner" aria-hidden="true"></div>
               <p>Building accurate print preview…</p>
             </div>
-            <canvas id="print-preview-canvas" aria-label="Print sheet preview"></canvas>
+            <canvas id="print-preview-canvas" aria-label="Prepared PDF sheet preview"></canvas>
           </div>
-          <p id="print-preview-caption" class="print-preview-caption">Preview updates when print settings change.</p>
+          <p id="print-preview-caption" class="print-preview-caption">Preview updates when PDF preparation settings change.</p>
         </main>
       </div>
-
-      <section id="print-manual-panel" class="print-manual-panel" hidden aria-labelledby="print-manual-title" aria-describedby="print-manual-text print-manual-note">
-        <header class="print-manual-header">
-          <div class="print-manual-title-group">
-            <p class="print-manual-eyebrow">Manual duplex · Second pass</p>
-            <h3 id="print-manual-title" tabindex="-1">Print the second side</h3>
-            <p id="print-manual-text" class="print-manual-text" role="status" aria-live="polite">First side printed — reload the paper to continue.</p>
-          </div>
-          <div class="print-manual-context">
-            <span id="print-manual-step" class="print-manual-step" aria-label="Step 2 of 2">Step 2 of 2</span>
-            <div class="print-manual-printer">
-              <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6zM18 12h.01"/></svg>
-              <div class="print-manual-printer-copy">
-                <span class="print-manual-printer-label">Printer</span>
-                <strong id="print-manual-printer-name">Printer not identified</strong>
-                <span id="print-manual-profile">Printer-specific feed not verified</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <ol class="print-manual-steps" aria-label="Three steps to print the second side">
-          <li class="print-manual-card">
-            <div class="print-manual-card-heading">
-              <span class="print-manual-number" aria-hidden="true">1</span>
-              <h4 id="print-manual-step-one-title">Collect the printed stack</h4>
-            </div>
-            <svg class="print-manual-art" aria-hidden="true" viewBox="0 0 220 112" fill="none">
-              <path d="M47 16h126a8 8 0 0 1 8 8v44H39V24a8 8 0 0 1 8-8Z" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="3"/>
-              <path d="M55 30h110v8H55z" fill="var(--bg-secondary)"/>
-              <path d="M39 55h142v17H39z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="2"/>
-              <path d="m37 72 142 0 18 22H22z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="3" stroke-linejoin="round"/>
-              <path d="M62 45h98v34H62z" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2.5"/>
-              <path d="M68 51h86v5H68z" fill="var(--bg-surface)"/>
-              <path d="M76 64h40M76 70h51" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
-              <path d="M45 99h131" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>
-              <circle cx="163" cy="48" r="3" fill="var(--accent)"/>
-            </svg>
-            <p id="print-manual-step-one-text" class="print-manual-card-copy">Collect every sheet from the output bin. Keep the sheets in the same order, and do not discard blank sheets.</p>
-          </li>
-
-          <li class="print-manual-card">
-            <div class="print-manual-card-heading">
-              <span class="print-manual-number" aria-hidden="true">2</span>
-              <h4 id="print-manual-step-two-title">Check the printer’s feed guide</h4>
-            </div>
-            <svg class="print-manual-art" aria-hidden="true" viewBox="0 0 220 112" fill="none">
-              <path d="M48 14h124a8 8 0 0 1 8 8v43H40V22a8 8 0 0 1 8-8Z" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="3"/>
-              <path d="M56 28h108v8H56z" fill="var(--bg-secondary)"/>
-              <path d="M42 58h136v17H42z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="2"/>
-              <path d="m45 76 131 0 20 24H25z" fill="var(--bg-secondary)" stroke="var(--border)" stroke-width="3" stroke-linejoin="round"/>
-              <path d="M64 53h93v7H64zM60 60h101v7H60zM56 67h109v7H56z" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
-              <path d="M74 49h74" stroke="var(--text-secondary)" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>
-              <path d="M110 24v16m-6-6 6 6 6-6" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <g class="print-manual-generic-visual">
-                <circle cx="169" cy="45" r="12" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2"/>
-                <path d="M169 39v7m0 4h.01" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
-              </g>
-              <g class="print-manual-hp-visual">
-                <circle cx="169" cy="45" r="12" fill="var(--bg-primary)" stroke="var(--accent)" stroke-width="2"/>
-                <path d="m163 45 4 4 8-9" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </g>
-            </svg>
-              <div id="print-manual-loading-labels" class="print-manual-loading-labels" role="group" aria-label="Paper loading guidance">
-              <span>Feed direction varies</span>
-              <span>Check this printer’s guide</span>
-            </div>
-            <p id="print-manual-step-two-text" class="print-manual-card-copy">Cambuz cannot confirm this printer’s feed direction. Check its own instructions for how to orient the stack and which side should face up or down before loading.</p>
-          </li>
-
-          <li class="print-manual-card print-manual-card-continue">
-            <div class="print-manual-card-heading">
-              <span class="print-manual-number" aria-hidden="true">3</span>
-              <h4>Continue printing</h4>
-            </div>
-            <div class="print-manual-continue-art" aria-hidden="true">
-              <svg class="print-manual-continue-printer" viewBox="0 0 46 42" fill="none">
-                <path d="M12 14V4h22v10M12 31H8a4 4 0 0 1-4-4v-9a4 4 0 0 1 4-4h30a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4h-4" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
-                <path d="M12 25h22v13H12z" fill="var(--bg-primary)" stroke="currentColor" stroke-width="2.5"/>
-                <path d="M17 30h12M17 34h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="36" cy="18" r="1.5" fill="currentColor"/>
-              </svg>
-              <span class="print-manual-continue-chip">Continue <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="M3 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            </div>
-            <p class="print-manual-card-copy">Click <strong>Continue</strong> below to start printing the second sides.</p>
-          </li>
-        </ol>
-
-        <aside id="print-manual-note" class="print-manual-note" aria-label="Printer-specific loading guidance">
-          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7h.01" stroke-linecap="round"/></svg>
-          <div>
-            <strong id="print-manual-note-title">Loading instructions vary by printer</strong>
-            <p id="print-manual-note-text">The printer model was not identified. Check the printer’s own paper-loading guide before reloading; do not guess which side faces up or down.</p>
-          </div>
-        </aside>
-
-        <div class="print-dialog-actions print-manual-actions">
-          <button id="btn-print-manual-cancel" class="btn-secondary" aria-label="Skip printing the second side">Skip second side</button>
-          <button id="btn-print-manual-continue" class="btn-primary" aria-label="Continue to print the second sides">Continue</button>
-        </div>
-      </section>
 
       <footer class="print-dialog-footer">
         <p id="print-status" class="print-status" role="status" aria-live="polite"></p>
         <div class="print-dialog-actions print-footer-actions">
-          <button id="btn-print-download" class="btn-secondary print-download-btn" disabled>Download print-ready PDF</button>
-          <button id="btn-print-current" class="btn-secondary" disabled>Print current page</button>
-          <button id="btn-print-cancel" class="btn-secondary">Cancel</button>
-          <button id="btn-print-submit" class="btn-primary" disabled>
+          <button id="btn-print-download" class="btn-secondary" disabled>Download print-ready PDF</button>
+          <button id="btn-print-cancel" class="btn-secondary">Close</button>
+          <button id="btn-print-open-system" class="btn-primary" disabled>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/>
+              <path d="M14 3h7v7"/><path d="m21 3-9 9"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
             </svg>
-            <span id="print-submit-label">Print</span>
+            <span id="print-open-system-label">Open PDF in system viewer</span>
           </button>
         </div>
       </footer>

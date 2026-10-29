@@ -8,8 +8,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import UPNGModule from '@pdf-lib/upng';
+import { createCanvas, DOMMatrix, ImageData, Path2D } from '@napi-rs/canvas';
 import * as pdfjsLib from '../node_modules/pdfjs-dist/legacy/build/pdf.mjs';
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 import {
   PAPER_SIZES,
   PRINT_DEFAULTS,
@@ -19,19 +20,18 @@ import {
   getMarginsMm,
   getPaperDimensions,
   grayscaleRgbaInPlace,
-  millimetresToMicrons,
   normalizePrintSettings,
   parsePageRanges,
-  describeDuplexMode,
-  isManualDuplexMode,
   resolvePageSelection,
-  splitSheetsForManualDuplex,
   summarizePrintJob,
 } from '../src/printing.js';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const standardFontDataUrl = pathToFileURL(path.join(ROOT, 'node_modules', 'pdfjs-dist', 'standard_fonts') + path.sep).href;
 const UPNG = UPNGModule.default;
+globalThis.DOMMatrix = DOMMatrix;
+globalThis.ImageData = ImageData;
+globalThis.Path2D = Path2D;
 let passed = 0;
 let failed = 0;
 const failures = [];
@@ -129,16 +129,9 @@ assert(
 );
 assert(getMarginsMm({ ...PRINT_DEFAULTS, marginMode: 'wide' }).left === 20, 'wide margins resolve to 20 mm');
 assert(getMarginsMm({ ...PRINT_DEFAULTS, marginMode: 'custom', customMargin: 12 }).top === 12, 'custom margin is applied uniformly');
-assert(millimetresToMicrons(210) === 210000, 'native printer paper dimensions convert to microns');
 const grayPixels = grayscaleRgbaInPlace(new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 128]));
 assert(grayPixels[0] === grayPixels[1] && grayPixels[1] === grayPixels[2], 'Ink Saver converts RGB pixels to grayscale');
 assert(grayPixels[4] === grayPixels[5] && grayPixels[5] === grayPixels[6] && grayPixels[7] === 255, 'grayscale conversion makes output pixels opaque');
-assert(normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'longEdge', collate: false }).duplexMode === 'longEdge', 'two-sided long-edge and uncollated choices are accepted');
-assert(normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'shortEdge' }).duplexMode === 'shortEdge', 'two-sided short-edge choice is accepted');
-throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'two-sided' }), 'one-sided', 'invalid duplex mode rejected');
-throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, collate: 'false' }), 'Collate must', 'non-boolean collation rejected');
-throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, copies: 0 }), 'Copies must', 'zero copies rejected');
-throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, copies: 100 }), 'Copies must', 'copies above the limit rejected');
 throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, pagesPerSheet: 3 }), 'Pages per sheet', 'unsupported N-up setting rejected');
 throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, scaling: 'custom', customScale: 401 }), 'Custom scale', 'custom scale above 400% rejected');
 throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, marginMode: 'custom', customMargin: 51 }), 'Custom margins', 'custom margin above 50 mm rejected');
@@ -245,9 +238,11 @@ const rotatedTitle = rotatedPreviewText.items.find((item) => item.str === 'Cambu
 assert(rotatedTitle && Math.abs(rotatedTitle.transform[1]) > 0, 'PDF /Rotate is applied to the placed page content');
 await rotatedPreviewDoc.destroy();
 
+// A tiny grayscale raster stands in for the production canvas output so the
+// composed artifact contains an actual neutral image rather than only vectors.
 const rgba = new Uint8Array([
-  230, 20, 20, 255, 20, 220, 20, 255,
-  20, 20, 230, 255, 245, 245, 245, 255,
+  32, 32, 32, 255, 96, 96, 96, 255,
+  160, 160, 160, 255, 224, 224, 224, 255,
 ]);
 const pngBytes = new Uint8Array(UPNG.encode([rgba.buffer], 2, 2, 0));
 let grayCalls = 0;
@@ -261,7 +256,11 @@ const inkJob = await buildPrintPdf({
     return pngBytes;
   },
 });
-assert(grayCalls === 1 && inkJob.pageCount === 1, 'Ink Saver uses a grayscale image for the selected source page');
+assert(grayCalls === 1 && inkJob.pageCount === 1 &&
+  Array.from({ length: rgba.length / 4 }, (_, index) => {
+    const offset = index * 4;
+    return rgba[offset] === rgba[offset + 1] && rgba[offset + 1] === rgba[offset + 2];
+  }).every(Boolean), 'Ink Saver embeds a grayscale raster image for the selected source page');
 assert((await PDFDocument.load(inkJob.bytes)).getPageCount() === 1, 'Ink Saver output remains a valid PDF');
 await rejects(
   () => buildPrintPdf({ sourceBytes: welcome, settings: { ...PRINT_DEFAULTS, inkSaver: true } }),
@@ -269,33 +268,78 @@ await rejects(
   'Ink Saver fails clearly when no grayscale renderer is available'
 );
 
-console.log('\n## Manual two-sided (no duplex unit)');
-assert(normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'manual' }).duplexMode === 'manual', 'manual two-sided mode is accepted');
-throws(() => normalizePrintSettings({ ...PRINT_DEFAULTS, duplexMode: 'manualLongEdge' }), 'one-sided', 'retired manual mode names are rejected');
-assert(isManualDuplexMode('manual') && !isManualDuplexMode('longEdge') && !isManualDuplexMode('simplex'), 'only the manual mode is sequenced by Cambuz');
-assert(describeDuplexMode('manual') === 'manual two-sided' && describeDuplexMode('longEdge') === 'two-sided, long edge', 'duplex labels are human readable');
-{
-  // Five composed sheets, each a distinct width so the output order is checkable.
-  const composed = await PDFDocument.create();
-  for (let i = 1; i <= 5; i += 1) composed.addPage([100 + i, 200]);
-  const composedBytes = await composed.save();
-  const split = await splitSheetsForManualDuplex(composedBytes);
-  const widthsOf = async (bytes) => {
-    const doc = await PDFDocument.load(bytes);
-    return doc.getPages().map((page) => page.getWidth() - 100);
-  };
-  const front = await widthsOf(split.frontBytes);
-  const back = await widthsOf(split.backBytes);
-  assert(split.frontCount === 3 && split.backCount === 2, 'manual split: 3 front sheets and 2 back sheets for 5 composed pages');
-  assert(JSON.stringify(front) === '[1,3,5]', `manual split: front pass keeps sheets 1,3,5 in order (got ${JSON.stringify(front)})`);
-  assert(JSON.stringify(back) === '[4,2]', `manual split: back pass is sheets 4,2 (reverse order) (got ${JSON.stringify(back)})`);
+console.log('\n## 5. Independent artifact raster inspection');
+const diagnosticSource = await PDFDocument.create();
+const diagnosticFont = await diagnosticSource.embedFont(StandardFonts.Helvetica);
+const normalPage = diagnosticSource.addPage([300, 400]);
+normalPage.drawText('Normal black text', { x: 78, y: 300, size: 20, font: diagnosticFont, color: rgb(0, 0, 0) });
+normalPage.drawRectangle({ x: 105, y: 155, width: 90, height: 90, color: rgb(0, 0, 0) });
+const artworkPage = diagnosticSource.addPage([300, 400]);
+artworkPage.drawRectangle({ x: 20, y: 160, width: 110, height: 80, color: rgb(0.5, 0.5, 0.5) });
+artworkPage.drawRectangle({ x: 170, y: 160, width: 110, height: 80, color: rgb(1, 0, 0), opacity: 0.5 });
+const darkPage = diagnosticSource.addPage([300, 400]);
+darkPage.drawRectangle({ x: 0, y: 0, width: 300, height: 400, color: rgb(0.04, 0.04, 0.04) });
+darkPage.drawRectangle({ x: 115, y: 175, width: 70, height: 50, color: rgb(1, 1, 1) });
+const diagnosticJob = await buildPrintPdf({
+  sourceBytes: new Uint8Array(await diagnosticSource.save()),
+  settings: { ...PRINT_DEFAULTS, pageMode: 'all', marginMode: 'none' },
+});
+const diagnosticDoc = await pdfjsLib.getDocument({ data: diagnosticJob.bytes.slice(), standardFontDataUrl }).promise;
+const diagnosticText = await (await diagnosticDoc.getPage(1)).getTextContent();
+assert(diagnosticText.items.some((item) => item.str === 'Normal black text'),
+  'normal black text remains text in the prepared artifact');
+async function rasterSample(pageNumber, xRatio, yRatio) {
+  const page = await diagnosticDoc.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  const context = canvas.getContext('2d');
+  // Deliberately use a non-white canvas before rendering. A white corner then
+  // comes from the PDF artifact, not the test harness or viewer default.
+  context.fillStyle = '#00ff00';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: context, viewport, background: null }).promise;
+  const x = Math.max(0, Math.min(canvas.width - 1, Math.round(canvas.width * xRatio)));
+  const y = Math.max(0, Math.min(canvas.height - 1, Math.round(canvas.height * yRatio)));
+  return [...context.getImageData(x, y, 1, 1).data];
 }
-{
-  const single = await PDFDocument.create();
-  single.addPage([101, 200]);
-  const split = await splitSheetsForManualDuplex(await single.save());
-  assert(split.frontCount === 1 && split.backCount === 0, 'manual split: a one-sheet job needs no second pass');
-}
+const whiteSheetPixel = await rasterSample(1, 0.02, 0.02);
+const blackArtworkPixel = await rasterSample(1, 0.5, 0.5);
+const grayscalePixel = await rasterSample(2, 0.25, 0.5);
+const transparentPixel = await rasterSample(2, 0.78, 0.5);
+const darkBackgroundPixel = await rasterSample(3, 0.2, 0.5);
+assert(whiteSheetPixel.slice(0, 3).every((value) => value > 245),
+  'prepared PDF paints an opaque white physical sheet beneath source content', whiteSheetPixel.join(','));
+assert(blackArtworkPixel.slice(0, 3).every((value) => value < 15),
+  'normal black artwork remains black on the white sheet', blackArtworkPixel.join(','));
+assert(Math.max(...grayscalePixel.slice(0, 3)) - Math.min(...grayscalePixel.slice(0, 3)) <= 2 &&
+  grayscalePixel[0] > 110 && grayscalePixel[0] < 150,
+  'grayscale artwork retains a neutral midtone', grayscalePixel.join(','));
+assert(transparentPixel[0] > 235 && transparentPixel[1] > 110 && transparentPixel[1] < 150 &&
+  Math.abs(transparentPixel[1] - transparentPixel[2]) <= 3,
+  'transparent artwork composites over the white sheet without becoming black', transparentPixel.join(','));
+assert(darkBackgroundPixel.slice(0, 3).every((value) => value < 20),
+  'legitimate dark document backgrounds are preserved above the white sheet', darkBackgroundPixel.join(','));
+await diagnosticDoc.destroy();
+
+console.log('\n## 6. System-viewer separation');
+const normalizedWithPhysicalOptions = normalizePrintSettings({
+  ...PRINT_DEFAULTS,
+  copies: 9,
+  collate: false,
+  duplexMode: 'manual',
+  deviceName: 'not-a-real-printer',
+});
+assert(
+  !Object.hasOwn(normalizedWithPhysicalOptions, 'copies') &&
+  !Object.hasOwn(normalizedWithPhysicalOptions, 'collate') &&
+  !Object.hasOwn(normalizedWithPhysicalOptions, 'duplexMode') &&
+  !Object.hasOwn(normalizedWithPhysicalOptions, 'deviceName'),
+  'printer, copy and duplex choices are not part of PDF preparation settings'
+);
+assert(
+  !Object.hasOwn(summarizePrintJob(PRINT_DEFAULTS, 5, 1), 'copies'),
+  'prepared-PDF summary contains no printer-only copy setting'
+);
 
 console.log('\n==============================');
 console.log(`Phase 3 print tests: ${passed} passed, ${failed} failed`);

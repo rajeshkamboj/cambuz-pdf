@@ -123,27 +123,28 @@ exercised on GitHub runners against the *packaged* app — see
 
 ### 🖨️ Printing
 
-- Print preview is rendered from the *exact* print-ready PDF that goes to the printer,
-  so the preview is what you get: page selection with validated ranges, 1–99 copies,
-  portrait/landscape, A4/A3/A5/Letter/Legal/Tabloid, five margin presets plus custom
-  (0–50 mm), fit/actual/custom scaling, and 2-up / 4-up sheets.
-- Choose one-sided or two-sided printing, plus collated or uncollated copies.
-  *Automatic* two-sided sends the choice to Electron's native print API and needs a
-  printer with a duplex unit. *Manual* two-sided works on simplex printers: Cambuz
-  prints the odd pages first, then asks you to reload the stack for the even pages.
-  Feed direction varies by printer. For the HP LaserJet 1018/1020/1022 family, reload
-  printed-side down with the page's bottom edge entering first (rotate the stack 180°
-  without turning it face-up) and keep the sheet order. Manual two-sided prints one
-  copy at a time. Direct printing to a named printer does not open a dialog; in the
-  system print dialog, verify the driver's settings first.
-- Ink Saver preset: grayscale raster output (capped at 200 dpi) to save toner.
-- On Windows, Cambuz lists system printers via Electron and can fall back to the native
-  print dialog. Browser mode cannot set printer options: choose duplex, copies and
-  collation in the browser/system dialog. The downloadable print-ready PDF contains
-  the page selection and layout, **not** printer-only settings such as duplex/copies.
-  Print preview, job preparation and native-option forwarding are covered by tests;
-  automated tests do not verify physical output. An initial HP LaserJet 1020 manual-duplex
-  test showed that refeed orientation matters; broader hardware acceptance is still needed.
+- Cambuz prepares a print-ready PDF and renders its preview from the *exact same bytes*.
+  Preparation covers validated page selection, portrait/landscape,
+  A4/A3/A5/Letter/Legal/Tabloid, five margin presets plus custom (0–50 mm),
+  fit/actual/custom scaling, and 2-up / 4-up sheets.
+- **Open PDF in system viewer** is an explicit action. It opens the prepared artifact
+  with the operating system's registered PDF application; use that application's normal
+  Print command to choose an installed printer, copies, collation, page range, duplex,
+  and device-specific preferences. Cambuz does not silently submit a print job.
+- **Download print-ready PDF** independently saves those exact prepared bytes through a
+  native Save dialog. A successful export proves only that the file was written, not
+  that a physical printer will render it correctly.
+- Manual duplex is delegated to the system PDF viewer and printer driver. Follow their
+  prompts and the printer's own paper-loading guide. Cambuz does not apply a 180-degree
+  rotation, reorder a second pass, or show model-specific loading instructions.
+- Ink Saver remains an optional grayscale raster output (capped at 200 dpi). Normal
+  preparation preserves vector/raster PDF page content and paints an opaque white sheet
+  beneath it; legitimate dark content is drawn above that sheet and is not replaced.
+- Electron's former named-printer/silent `webContents.print` route was removed after real
+  Windows output produced black pages and Chromium's PDF window could not provide a
+  reliable preview. Automated tests cover the artifact and handoff/error paths, but do
+  **not** establish that physical printing is fixed. Windows hardware testing is required.
+  See [the printing workflow rationale](docs/PRINTING-WORKFLOW.md).
 
 ### ✂️ Page tools
 

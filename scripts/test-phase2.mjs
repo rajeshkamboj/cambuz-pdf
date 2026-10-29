@@ -431,9 +431,12 @@ section('9. Print integration and optional OCR engine isolation');
   const src = ['src/renderer.js', 'src/search.js', 'src/sidebar.js', 'src/recents.js', 'src/printing.js', 'src/print-ui.js', 'main.js']
     .map((f) => readFileSync(path.join(ROOT, f), 'utf8'))
     .join('\n');
-  const required = ['print-pdf', 'list-printers', 'webContents.print', 'buildPrintPdf'];
+  const required = ['open-pdf-in-system-viewer', 'save-print-ready-pdf', 'shell.openPath', 'buildPrintPdf'];
   for (const feature of required) {
-    assert(src.includes(feature), `Phase 3 print integration includes ${feature}`);
+    assert(src.includes(feature), `print preparation integration includes ${feature}`);
+  }
+  for (const removed of ["ipcMain.handle('print-pdf'", "ipcMain.handle('list-printers'", 'webContents.print(']) {
+    assert(!src.includes(removed), `broken direct-print integration excludes ${removed}`);
   }
   const core = ['src/search.js', 'src/sidebar.js', 'src/recents.js', 'src/printing.js', 'src/print-ui.js']
     .map((f) => readFileSync(path.join(ROOT, f), 'utf8'))

@@ -50,16 +50,16 @@
     },
     {
       "id": "print",
-      "headline": "What-you-see print preview and flexible layout controls",
-      "description": "Preview the exact print-ready PDF that goes to the printer, with page ranges, N-up sheets, custom margins, duplex options, and Ink Saver.",
+      "headline": "Prepare once, then print with your system PDF viewer",
+      "description": "Preview and save the exact print-ready PDF, then explicitly open it in your registered PDF viewer for printer and driver settings.",
       "bullets": [
-        "Live print preview rendered from the exact print-ready PDF sent to the printer.",
-        "Custom page ranges, 1–99 copies, portrait/landscape, and A4, A3, A5, Letter, Legal, and Tabloid paper sizes.",
+        "Live preview rendered from the exact prepared PDF artifact.",
+        "Current, all, or selected pages; portrait/landscape and A4, A3, A5, Letter, Legal, and Tabloid paper sizes.",
         "Five margin presets plus custom margins (0–50 mm), fit/actual/custom scaling, and 2-up or 4-up sheets.",
-        "One-sided or two-sided printing (long-edge or short-edge flip), collated copies, and 200 dpi grayscale Ink Saver mode."
+        "Independent print-ready PDF download, explicit system-viewer handoff, and optional 200 dpi grayscale Ink Saver mode."
       ],
-      "screenshotAlt": "Cambuz PDF Reader print preview dialog with page range, layout, duplex, and Ink Saver controls",
-      "screenshotCaption": "Print preview renders the exact prepared sheet layout with margins, N-up, duplex, and Ink Saver options.",
+      "screenshotAlt": "Cambuz PDF Reader preparation dialog with page range, layout, Ink Saver, export, and system-viewer controls",
+      "screenshotCaption": "Cambuz previews the exact prepared artifact; the system PDF viewer controls printer selection, copies, duplex, and cancellation.",
       "icon": "Printer",
       "screenshotId": "print"
     },
