@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml"><img src="https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml/badge.svg?branch=main" alt="Desktop builds status (main)" /></a>
   <!-- release-sync:badge:start -->
-  <a href="https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-build.89"><img src="https://img.shields.io/badge/download-v1.1.0--build.89-success" alt="Download v1.1.0-build.89" /></a>
+  <a href="https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-build.95"><img src="https://img.shields.io/badge/download-v1.1.0--build.95-success" alt="Download v1.1.0-build.95" /></a>
   <img src="https://img.shields.io/badge/version-1.1.0--pre--release-informational" alt="Version 1.1.0 pre-release" />
   <!-- release-sync:badge:end -->
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
@@ -34,14 +34,14 @@
 
 <!-- release-sync:downloads:start -->
 > **How downloads work right now:** version **1.1.0** is published as the
-> **[v1.1.0-build.89 pre-release][release-page]**, so the links below are permanent
+> **[v1.1.0-build.95 pre-release][release-page]**, so the links below are permanent
 > release-asset links — no GitHub account needed and no 30-day CI expiry.
 > Automatic builds are **unsigned pre-release builds**: expect SmartScreen and Gatekeeper warnings.
 > A manual acceptance pass on real hardware still gates a full stable release.
 
-Every file is built from commit `45f8470` in
-[CI run 39978343104](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/39978343104)
-(all five jobs green) and attached to the [v1.1.0-build.89 pre-release][release-page].
+Every file is built from commit `ecfe36e` in
+[CI run 40837335528](https://github.com/rajeshkamboj/cambuz-pdf/actions/runs/40837335528)
+(all five jobs green) and attached to the [v1.1.0-build.95 pre-release][release-page].
 
 | Platform & architecture | File | Best for | Size | Download |
 | --- | --- | --- | ---: | --- |
@@ -53,22 +53,22 @@ Every file is built from commit `45f8470` in
 | Windows arm64, Intel Mac, Linux arm64 | — | Not built | — | *unavailable* |
 
 All five files, plus [`SHA256SUMS.txt`][sums-dl], are listed on the
-[v1.1.0-build.89 pre-release page][release-page]. Want a build of a newer commit? The
+[v1.1.0-build.95 pre-release page][release-page]. Want a build of a newer commit? The
 [Desktop builds workflow](https://github.com/rajeshkamboj/cambuz-pdf/actions/workflows/desktop-build.yml)
 publishes a new pinned pre-release on every successful push to `main` and also uploads
 CI artifacts (CI artifacts need a signed-in GitHub account and expire after 30 days; the
 release links above do not).
 
 <details>
-<summary><strong>SHA-256 checksums for the v1.1.0-build.89 files</strong> (published as <code>SHA256SUMS.txt</code> on the release)</summary>
+<summary><strong>SHA-256 checksums for the v1.1.0-build.95 files</strong> (published as <code>SHA256SUMS.txt</code> on the release)</summary>
 
 | File | SHA-256 |
 | --- | --- |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` | `3d8d3b92f1712e7b1362228fb616779b1fbbd9e223a0952ff54da6fa0db34118` |
-| `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | `78d8735bd880a89a2a73b5ce695a4c5d72a2697d5dbf1c87270b04edd20c8329` |
-| `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | `f780382562962ab7c7a303a7783678368838c76c09827510c15764a4aee17c9f` |
-| `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | `7392c66106c64c88627753ddc6eaafac59b1b0caf8339aa5e0a957a087159fb2` |
-| `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | `e9a295f630df156d15f67c18e11284513e61a956244deacdb29acb3ba33e4e7f` |
+| `Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe` | `48b62d28521d7f9ebd1ed3e4caa6fd555fb1296a6e64cccb90b9a4845220a6ee` |
+| `Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe` | `41cac076983fa76a594a9c758153e428608c141095189e9f3a413d807e560b9f` |
+| `Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage` | `c98214c8d4ddc641885b9810b4bbf5c62a4a918efa7ee3e592c025eb413cc295` |
+| `Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg` | `551497d628200c42ab46d036882dce8e881dea8e929ef4fbe049c3ff21b77d4f` |
+| `Cambuz-PDF-Reader-1.1.0-mac-arm64.zip` | `198b357eeb7b5aebdec772025dd22a46721501fa525f954d784fcc54a2417249` |
 
 Verify after download: `Get-FileHash -Algorithm SHA256 <file>` (PowerShell) or
 `sha256sum -c SHA256SUMS.txt` (Linux/macOS, next to the downloaded files). The builds are unsigned, so the checksum is how you confirm a file is the one CI produced.
@@ -411,11 +411,11 @@ with bundled third-party components listed with full license texts in
   [Windows acceptance checklist](docs/WINDOWS-ACCEPTANCE-CHECKLIST.md)
 
 <!-- release-sync:links:start -->
-[release-page]: https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-build.89
-[win-setup-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe
-[win-portable-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe
-[linux-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage
-[mac-dmg-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg
-[mac-zip-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/Cambuz-PDF-Reader-1.1.0-mac-arm64.zip
-[sums-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.89/SHA256SUMS.txt
+[release-page]: https://github.com/rajeshkamboj/cambuz-pdf/releases/tag/v1.1.0-build.95
+[win-setup-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/Cambuz-PDF-Reader-1.1.0-win-x64-setup.exe
+[win-portable-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/Cambuz-PDF-Reader-1.1.0-win-x64-portable.exe
+[linux-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/Cambuz-PDF-Reader-1.1.0-linux-x86_64.AppImage
+[mac-dmg-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/Cambuz-PDF-Reader-1.1.0-mac-arm64.dmg
+[mac-zip-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/Cambuz-PDF-Reader-1.1.0-mac-arm64.zip
+[sums-dl]: https://github.com/rajeshkamboj/cambuz-pdf/releases/download/v1.1.0-build.95/SHA256SUMS.txt
 <!-- release-sync:links:end -->
