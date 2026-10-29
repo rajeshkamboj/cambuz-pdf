@@ -590,7 +590,7 @@ async function main() {
     const shell = await evaluate(`({
       title: document.title,
       protocol: location.protocol,
-      bridge: ['openFile', 'readFile', 'readSample', 'printPdf', 'savePdf', 'rendererReady', 'onOpenFilePath'].every((name) => typeof window.cambuzAPI?.[name] === 'function'),
+      bridge: ['openFile', 'readFile', 'readSample', 'openPdfInSystemViewer', 'savePrintReadyPdf', 'savePdf', 'rendererReady', 'onOpenFilePath'].every((name) => typeof window.cambuzAPI?.[name] === 'function'),
     })`);
     record('window title is "Cambuz PDF Reader"', shell.title === 'Cambuz PDF Reader', shell.title);
     record('preload bridge (window.cambuzAPI) is exposed', shell.bridge);
@@ -844,12 +844,16 @@ async function main() {
     try {
       const printStartedAt = performance.now();
       await clickSelector('#btn-print');
-      const printPreview = await waitFor('the packaged print preview to build and render', () =>
+      const printPreview = await waitFor('the packaged print-ready PDF preview to build and render', () =>
         evaluate(`(() => {
           const dialog = document.getElementById('print-dialog');
           const canvas = document.getElementById('print-preview-canvas');
+          const openSystemButton = document.getElementById('btn-print-open-system');
+          const downloadButton = document.getElementById('btn-print-download');
+          const totalSheets = Number(document.getElementById('print-preview-total').textContent);
           const status = document.getElementById('print-status').textContent;
-          return getComputedStyle(dialog).display !== 'none' && canvas.width > 0 && canvas.height > 0 && status.startsWith('Preview ready')
+          const prepared = !openSystemButton.disabled && !downloadButton.disabled && totalSheets > 0;
+          return getComputedStyle(dialog).display !== 'none' && canvas.width > 0 && canvas.height > 0 && prepared
             ? { width: canvas.width, height: canvas.height, status }
             : null;
         })()`), 60000);

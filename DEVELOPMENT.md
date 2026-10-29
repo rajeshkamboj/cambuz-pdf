@@ -800,9 +800,9 @@ On a normal desktop (not the CI runner), with the artifacts from run
    double-click a second PDF while Cambuz runs (window must switch, no second
    window); delete/rename a target and double-click its stale link (expect the
    clear in-app error, not a crash).
-3. **Windows printing:** with a real or virtual printer (e.g. Microsoft Print to
-   PDF), open Print, confirm the printer list populates, print 1 and 2 copies,
-   try the empty-printer system-dialog fallback, and inspect the output.
+3. **Windows printing:** prepare and download one artifact, explicitly open it
+   in the registered PDF viewer, then use that viewer to select a real or virtual
+   printer, test cancellation and copies, and inspect the output.
 4. **Native context menu:** right-click page text (Copy enabled), empty page
    area (Copy disabled), and the search box (Cut/Copy/Paste/Select All).
 5. **Linux desktop:** on a distro with FUSE, `chmod +x` and launch the AppImage
@@ -1296,8 +1296,8 @@ fallback render path completes in this Node environment.
   development Noto font packages plus Python `fpdf2`, `uharfbuzz`, `fonttools`
   and `pypdf` (installation instructions below).
 - **Not verified here:** native OS clipboard integration, browser/Electron
-  rendering beyond PDF.js in Node, Electron's native print route, and physical
-  printer output. Those still need the manual Windows/browser checks below.
+  rendering beyond PDF.js in Node, the registered system viewer's print flow,
+  and physical printer output. Those need the manual Windows checks below.
 
 ### Phase 6 known limitations
 
@@ -1420,8 +1420,8 @@ Phases 1–4 is unchanged.
   protected fixtures is `cambuz`). `scripts/fixtures/acroform-basic.pdf` is a
   two-page form with every supported field type plus a read-only field.
 - **Not exercised:** the Electron desktop shell (no display or Electron binary
-  in this sandbox), so the new File-menu entries, the native save dialog and the
-  native print route are reviewed but untested at runtime. The web build is
+  in this sandbox), so the new File-menu entries, native save dialog and
+  registered-viewer handoff are reviewed but untested at runtime. The web build is
   served by `npm run serve` for manual checks in a browser; this sandbox has no
   browser, so canvas rendering, the on-page look of the form controls and
   physical printing were **not** observed here and still need a human pass.
@@ -1524,45 +1524,45 @@ Reader features from Phases 1–3 are unchanged.
 
 ---
 
-## Phase 3 — Implementation Status
+## Print workflow revision — system viewer handoff
 
-### Phase 3 Status: `PRINT WORKFLOW IMPLEMENTED — HARDWARE TEST PENDING`
+### Status: `PREPARATION + SYSTEM-VIEWER WORKFLOW IMPLEMENTED — WINDOWS HARDWARE TEST PENDING`
 
-Phase 1 and Phase 2 reading features are preserved. Phase 3 adds a print
-workflow that composes the chosen pages into a print-ready PDF before output.
-The preview is rendered from that exact PDF, so its page selection, paper
-size, margins, scaling, orientation and N-up layout match the file sent to
-Electron's native print API.
+Cambuz continues to compose a print-ready PDF with `pdf-lib` and previews the
+exact bytes with PDF.js. Physical printing is now a separate responsibility.
+The former in-app printer enumeration, named-printer silent submission, and
+Chromium-PDF `webContents.print` route were removed. That route loaded a PDF in
+Chromium's internal viewer and then asked Electron to print the viewer web
+contents; on the reported Windows machine it both produced black pages and
+showed “This app doesn't support print preview.” Electron documents
+`webContents.print` as printing a window's web page, not as a guaranteed native
+PDF-viewer pipeline, so changing only `silent` or the dialog was not treated as
+a fix.
 
-| Requirement | Implementation |
+| Responsibility | Current owner |
 |---|---|
-| Print current page / all pages / selected pages | ✅ Radio choices and validated page lists/ranges |
-| Page range validation | ✅ Bounds, syntax, descending ranges and duplicates rejected |
-| Printer selection | ✅ Electron printer list, default printer, refresh and system-dialog fallback |
-| Copies | ✅ 1–99 copies; passed to native printer or browser dialog |
-| Portrait / landscape | ✅ Output paper media box and native printer settings aligned |
-| Paper sizes | ✅ A4, A3, A5, Letter, Legal and Tabloid |
-| Fit / actual / custom scaling | ✅ Applied in the generated print PDF |
-| Margins | ✅ None, narrow, normal, wide and custom (0–50 mm) |
-| Multiple pages per sheet | ✅ 1, 2 or 4; clipped to each sheet cell |
-| Print preview | ✅ PDF.js preview of the composed output PDF |
-| Ink Saver preset | ✅ Grayscale raster output, capped at 200 dpi / 18 megapixels per page |
-| Native Windows printing | ✅ Electron printer enumeration and `webContents.print` route implemented |
-| Browser print fallback | ✅ Opens the same print-ready PDF in the system PDF/print flow |
-| Actual physical printer test | ⏳ Not available in this sandbox; verify on Windows with a configured printer |
+| Current/all/selected pages and range validation | Cambuz PDF preparation |
+| Paper media box, orientation, margins, fit/actual/custom scale, N-up | Cambuz PDF preparation |
+| Exact prepared artifact preview | Cambuz / PDF.js |
+| Save print-ready PDF | Native Save dialog; exact prepared bytes |
+| Open prepared PDF | Explicit `shell.openPath` action |
+| Printer enumeration and selection | Registered system PDF viewer / OS |
+| Copies, collation, driver preferences | Registered system PDF viewer / OS |
+| Automatic or manual duplex and second pass | Registered system PDF viewer / printer driver |
+| Cancellation after handoff | Registered system PDF viewer |
 
-Normal print jobs preserve the source PDF page content as vector content.
-Ink Saver intentionally rasterizes each page in grayscale at print resolution.
-The print-ready PDF can also be downloaded for external printer testing.
+Cambuz makes no printer-model or paper-feed assumption and applies no automatic
+second-pass rotation. Temporary viewer copies are bounded, cleaned after 24
+hours, retried on later startup when Windows has kept a file locked, and removed
+immediately when opening fails. If Cambuz itself is the registered PDF viewer,
+the handoff copy is blocked from replacing the currently open document and the
+UI directs the user to save the artifact and use **Open with**.
 
-### Phase 3 verification status
-
-Automated tests cover page-range validation, paper dimensions, orientation,
-1/2/4-up sheet counts and geometry, margins, scale modes, output PDF page
-counts and media boxes, text preservation (including Hindi and Punjabi), PDF
-page rotation, and Ink Saver output. The sandbox has no installed Electron
-binary/display or physical printer, so the Windows native dialog and hardware
-output were **not** exercised; this is not represented as a printer test.
+Artifact tests cover single/multiple/selected pages, page order and dimensions,
+Hindi and Punjabi text, grayscale, transparency, normal black-on-white content,
+and legitimate dark backgrounds. Main-process and DOM tests cover explicit
+handoff, Save cancellation, launch failure, exact-byte writes, and temporary
+cleanup. These tests do **not** prove correct physical output.
 
 ---
 
@@ -1802,8 +1802,8 @@ Cambuz PDF Reader
   `IndexedDB` so reopen works; Electron reopens by native path
 - **Rotation**: 0/90/180/270° applied to canvas, text layer and thumbnails
 - **Printing**: `pdf-lib` composes source pages into physical-size sheets; PDF.js
-  renders those exact sheets for preview; Electron routes the same PDF to the
-  selected native printer, while browser mode opens it in the system PDF/print flow
+  renders those exact sheets for preview; an explicit Electron `shell.openPath`
+  handoff opens the artifact in the registered PDF viewer for physical printing
 
 ### Search Verification (Unicode)
 
@@ -1824,11 +1824,11 @@ compatibility matrix and `npm run test:phase6` results above.
 
 ### Known Limitations
 
-- **Native printer verification**: Windows CI validated packaged print-PDF
-  preparation and preview, but did not enumerate printers, open the native
-  printer dialog, or submit a print job. Exercise the printer list, dialog,
-  copies, paper sizes and actual Windows output on a machine with a configured
-  printer before release. The local sandbox still has no Electron runtime.
+- **System-viewer / physical printer verification**: automated tests validate
+  preparation, preview, exact-byte handoff and launch failures, but do not
+  operate the registered viewer's print dialog or submit a physical job. Test
+  copies, paper sizes, duplex, cancellation and output on the target Windows
+  machine before release.
 - **Device printable margins**: the selected margin value defines the printable
   content box; per-printer non-printable margins are not queried automatically.
   Printers may clip at their hardware edges when `None` is selected.
@@ -1837,12 +1837,12 @@ compatibility matrix and `npm run test:phase6` results above.
   so filled form values do not appear on paper (see Phase 5 limitations).
 - **Ink Saver quality**: Ink Saver rasterizes at up to 200 dpi (with an
   18-megapixel-per-page safety cap); normal print jobs preserve vector content.
-- **Print preparation memory**: the active source PDF is retained for printing
-  and the composed output is held in memory. Electron rejects a print job above
-  250 MiB; very large documents can require substantial RAM.
-- **Browser printer access**: web mode cannot enumerate native printers; it
-  opens the system PDF/print flow instead. Electron mode provides the printer
-  selector and direct native route.
+- **Print preparation memory**: the active source PDF and composed output are
+  held in memory. System-viewer handoff rejects an artifact above 250 MiB; very
+  large documents can require substantial RAM.
+- **Physical printer controls**: neither web nor Electron mode enumerates or
+  chooses printers inside Cambuz. Desktop mode opens the exact artifact in the
+  registered PDF viewer; browser mode opens it in a new tab when allowed.
 - **Legacy sample-generator constraint**: older fpdf2-generated Hindi/Punjabi
   fixtures can mis-encode `ToUnicode` for pre-base matras and some
   ligature-plus-matra sequences. Phase 6's separate HarfBuzz-shaped fixture
@@ -1900,15 +1900,15 @@ Server checks cover `/src/index.html`, `/src/print.css`, `/src/print-ui.js`,
 `/src/pdf-ocr.css`, `/src/pdf-ocr-ui.js`, `/src/printing.js`, PDF.js ESM and
 `samples/phase7-scanned.pdf`.
 
-Native Windows printer enumeration/driver output and browser canvas-preview
-appearance remain outside the automated checks; the packaged Windows print-preview
-path passed CI, but it is not a hardware-tested print result.
+Registered-viewer behavior, driver output and browser canvas-preview appearance
+remain outside the automated checks. Passing preparation/handoff tests is not a
+hardware-tested print result.
 
 ### Manual Browser / Windows Checklist
 
-Start the web preview with `npm run serve` (port 3000). The live preview can
-exercise the UI and browser print fallback; Windows + Electron is required to
-verify native printer enumeration and driver output.
+Start the web preview with `npm run serve` (port 3000). It can exercise PDF
+preparation and browser-tab handoff; Windows + Electron is required to verify
+the registered system viewer and physical driver output.
 
 **Phase 6 language checks:**
 
@@ -1953,11 +1953,11 @@ verify native printer enumeration and driver output.
    sheet and page order in preview and downloaded print-ready PDF
 8. Turn on Ink Saver; confirm pages render grayscale, then download/open the
    prepared PDF and inspect it independently
-9. Electron on Windows: refresh printer list, select the default and another
-   printer, print one copy and multiple copies; verify the driver paper size,
-   orientation, clipping and margins
-10. Also test the native system-dialog fallback with no selected printer and
-    verify cancellation, printer errors and retry behavior
+9. Electron on Windows: click **Open PDF in system viewer**, verify the original
+   stays open in Cambuz, then select the default and another printer in the
+   viewer; test one/multiple copies, paper size, orientation, clipping and margins
+10. Cancel in the system viewer and test a missing/default-viewer launch failure;
+    verify Cambuz remains responsive and the export fallback remains available
 11. Electron only: native Open dialog, menus (Find/Rotate/Fullscreen/
     Sidebar/Shortcuts/Print) and reopen-by-path after restart
 

@@ -22,9 +22,6 @@ export const MARGIN_PRESETS_MM = Object.freeze({
 export const PRINT_DEFAULTS = Object.freeze({
   pageMode: 'all',
   pageRange: '',
-  copies: 1,
-  collate: true,
-  duplexMode: 'simplex',
   paperSize: 'A4',
   orientation: 'portrait',
   scaling: 'fit',
@@ -38,15 +35,9 @@ export const PRINT_DEFAULTS = Object.freeze({
 const MM_TO_PT = 72 / 25.4;
 const VALID_PAGE_MODES = new Set(['current', 'all', 'range']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
-// 'simplex' / 'longEdge' / 'shortEdge' ask the printer driver for automatic
-// two-sided output (needs a duplex unit). 'manual' is for printers without a
-// duplex unit: Cambuz prints the odd pages, the user reloads the stack, then
-// Cambuz prints the even pages in reverse order.
-const VALID_DUPLEX_MODES = new Set(['simplex', 'longEdge', 'shortEdge', 'manual']);
 const VALID_SCALING = new Set(['fit', 'actual', 'custom']);
 const VALID_MARGIN_MODES = new Set(['none', 'narrow', 'normal', 'wide', 'custom']);
 const VALID_PAGES_PER_SHEET = new Set([1, 2, 4]);
-const MAX_COPIES = 99;
 const MAX_CUSTOM_SCALE = 400;
 const MAX_MARGIN_MM = 50;
 
@@ -130,22 +121,11 @@ export function normalizePrintSettings(input = {}) {
   if (!VALID_ORIENTATIONS.has(settings.orientation)) {
     throw new Error('Choose portrait or landscape orientation.');
   }
-  if (!VALID_DUPLEX_MODES.has(settings.duplexMode)) {
-    throw new Error('Choose one-sided, automatic two-sided, or manual two-sided printing.');
-  }
-  if (typeof settings.collate !== 'boolean') {
-    throw new Error('Collate must be on or off.');
-  }
   if (!VALID_SCALING.has(settings.scaling)) {
     throw new Error('Choose fit to page, actual size, or custom scale.');
   }
   if (!VALID_MARGIN_MODES.has(settings.marginMode)) {
     throw new Error('Choose a supported margin setting.');
-  }
-
-  const copies = Number(settings.copies);
-  if (!Number.isSafeInteger(copies) || copies < 1 || copies > MAX_COPIES) {
-    throw new Error(`Copies must be a whole number from 1 to ${MAX_COPIES}.`);
   }
 
   const pagesPerSheet = Number(settings.pagesPerSheet);
@@ -170,11 +150,15 @@ export function normalizePrintSettings(input = {}) {
   }
 
   return Object.freeze({
-    ...settings,
-    copies,
-    pagesPerSheet,
+    pageMode: settings.pageMode,
+    pageRange: String(settings.pageRange ?? ''),
+    paperSize: settings.paperSize,
+    orientation: settings.orientation,
+    scaling: settings.scaling,
     customScale: Number.isFinite(customScale) ? customScale : PRINT_DEFAULTS.customScale,
+    marginMode: settings.marginMode,
     customMargin: Number.isFinite(customMargin) ? customMargin : PRINT_DEFAULTS.customMargin,
+    pagesPerSheet,
     inkSaver: Boolean(settings.inkSaver),
   });
 }
@@ -296,55 +280,6 @@ export function calculatePagePlacement(pageWidth, pageHeight, cell, settingsInpu
   };
 }
 
-/** True for two-sided modes that Cambuz itself sequences (no duplex unit needed). */
-export function isManualDuplexMode(mode) {
-  return mode === 'manual';
-}
-
-/** Short label used in the preview caption and status messages. */
-export function describeDuplexMode(mode) {
-  switch (mode) {
-    case 'longEdge': return 'two-sided, long edge';
-    case 'shortEdge': return 'two-sided, short edge';
-    case 'manual': return 'manual two-sided';
-    default: return 'one-sided';
-  }
-}
-
-/**
- * Split a composed print-ready PDF (one page per physical side, already N-up)
- * into the two passes needed for manual duplex on a simplex-only printer:
- *  - front: sheets 1, 3, 5, ... in order (printed first);
- *  - back:  sheets 2, 4, 6, ... in REVERSE order. A face-down output tray
- *    returns the first pass with its last page on top, so reloading that stack
- *    unchanged feeds the matching backs in this order.
- * An empty back pass means the job fits on one side.
- */
-export async function splitSheetsForManualDuplex(pdfBytes) {
-  const { PDFDocument } = await import('pdf-lib');
-  const source = await PDFDocument.load(pdfBytes);
-  const count = source.getPageCount();
-  const frontIndices = [];
-  const backIndices = [];
-  for (let i = 0; i < count; i += 2) frontIndices.push(i);
-  for (let i = count - 1; i >= 0; i -= 1) if (i % 2 === 1) backIndices.push(i);
-
-  const build = async (indices) => {
-    const out = await PDFDocument.create();
-    if (indices.length > 0) {
-      const pages = await out.copyPages(source, indices);
-      for (const page of pages) out.addPage(page);
-    }
-    return out.save({ useObjectStreams: true });
-  };
-  return Object.freeze({
-    frontBytes: await build(frontIndices),
-    backBytes: await build(backIndices),
-    frontCount: frontIndices.length,
-    backCount: backIndices.length,
-  });
-}
-
 /**
  * Assemble selected source pages into a new PDF. Source content remains
  * vector/raster PDF content (no screen-resolution screenshot is used). When
@@ -373,6 +308,7 @@ export async function buildPrintPdf({
     clip,
     endPath,
     degrees,
+    rgb,
   } = pdfLib;
 
   onProgress({ stage: 'Preparing', progress: 0 });
@@ -411,6 +347,16 @@ export async function buildPrintPdf({
   const itemCount = selectedPages.length;
   for (const sheetPlan of plan.sheets) {
     const sheet = output.addPage([plan.paperWidth, plan.paperHeight]);
+    // PDF pages have no inherent background colour. Paint the physical sheet
+    // white *before* source content so transparent artwork composites as it
+    // would on paper while legitimate dark page backgrounds remain untouched.
+    sheet.drawRectangle({
+      x: 0,
+      y: 0,
+      width: plan.paperWidth,
+      height: plan.paperHeight,
+      color: rgb(1, 1, 1),
+    });
     for (const item of sheetPlan.items) {
       const embedded = pageToEmbedded.get(item.pageNumber);
       const embeddedPage = embedded.page;
@@ -505,7 +451,6 @@ export function summarizePrintJob(settings, totalPages, currentPage = 1) {
     selectedCount: pages.length,
     sheetCount: sheets,
     pages,
-    copies: normalized.copies,
     pagesPerSheet: normalized.pagesPerSheet,
   };
 }
@@ -523,8 +468,4 @@ export function grayscaleRgbaInPlace(rgba) {
     rgba[i + 3] = 255;
   }
   return rgba;
-}
-
-export function millimetresToMicrons(mm) {
-  return Math.round(Number(mm) * 1000);
 }

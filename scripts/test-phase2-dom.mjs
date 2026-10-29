@@ -44,7 +44,6 @@ globalThis.localStorage = dom.window.localStorage;
 const { SearchController } = await import('../src/search.js');
 const { SidebarController } = await import('../src/sidebar.js');
 const { PrintController } = await import('../src/print-ui.js');
-const { getManualDuplexGuidance } = await import('../src/manual-duplex-guidance.js');
 const Recents = await import('../src/recents.js');
 
 // ---------------------------------------------------------------------------
@@ -83,117 +82,57 @@ assert(
   `${document.querySelectorAll('.shortcuts-table kbd').length} kbd tags`
 );
 
-section('D1b. Phase 3 print dialog wiring');
+section('D1b. Print preparation and system-viewer wiring');
 const PRINT_IDS = [
   'print-dialog', 'print-document-label', 'btn-print-close', 'btn-print-cancel',
-  'btn-print-current', 'btn-print-submit', 'btn-print-download', 'print-preset',
-  'print-current-page-label', 'print-page-range', 'print-range-error',
-  'print-printer', 'btn-refresh-printers', 'print-copies', 'print-collate',
-  'print-duplex', 'print-duplex-help', 'print-paper',
-  'print-orientation', 'print-pages-per-sheet', 'print-scaling',
-  'print-custom-scale', 'print-margins', 'print-custom-margin',
-  'print-ink-saver', 'print-settings-error', 'print-preview-summary',
-  'btn-print-preview-prev', 'btn-print-preview-next', 'print-preview-page',
-  'print-preview-total', 'print-preview-stage', 'print-preview-placeholder',
-  'print-preview-canvas', 'print-preview-caption', 'print-status',
+  'btn-print-open-system', 'print-open-system-label', 'btn-print-download', 'print-preset',
+  'print-current-page-label', 'print-page-range', 'print-range-error', 'print-paper',
+  'print-orientation', 'print-pages-per-sheet', 'print-scaling', 'print-custom-scale',
+  'print-margins', 'print-custom-margin', 'print-ink-saver', 'print-settings-error',
+  'print-preview-summary', 'btn-print-preview-prev', 'btn-print-preview-next',
+  'print-preview-page', 'print-preview-total', 'print-preview-stage',
+  'print-preview-placeholder', 'print-preview-canvas', 'print-preview-caption', 'print-status',
 ];
 assert(
   PRINT_IDS.every((id) => document.getElementById(id)),
-  `all ${PRINT_IDS.length} print controls and preview elements are present`
+  `all ${PRINT_IDS.length} preparation, preview and handoff elements are present`
 );
 assert(
   document.getElementById('print-dialog').getAttribute('aria-modal') === 'true',
-  'print preview is exposed as an accessible modal dialog'
+  'print preparation is exposed as an accessible modal dialog'
 );
 assert(
   [...document.querySelectorAll('#print-preset option')].some((option) => option.value === 'ink-saver'),
-  'Ink Saver preset is available'
+  'Ink Saver preparation preset is available'
+);
+assert(
+  !document.getElementById('print-printer') && !document.getElementById('print-copies') &&
+  !document.getElementById('print-duplex') && !document.getElementById('print-collate') &&
+  !document.getElementById('print-manual-panel'),
+  'Cambuz UI has no printer selector, copy/duplex controls or custom manual-duplex pass'
+);
+const systemNote = document.querySelector('.print-system-note');
+assert(
+  systemNote?.textContent.includes('system PDF viewer') &&
+  systemNote.textContent.includes('choose a printer') &&
+  systemNote.textContent.includes('does not rotate or reorder'),
+  'UI clearly delegates physical printing and manual duplex without an orientation assumption'
+);
+assert(
+  document.getElementById('btn-print-open-system').textContent.includes('Open PDF in system viewer') &&
+  document.getElementById('btn-print-download').textContent.includes('Download print-ready PDF'),
+  'system-viewer and independent PDF export actions are distinct and explicit'
+);
+assert(
+  !/printed[ -]side (?:up|down)|reload into tray|model-specific loading/i.test(document.getElementById('print-dialog').textContent),
+  'print interface contains no model-specific printer or paper-loading assumption'
 );
 
-const manualPanel = document.getElementById('print-manual-panel');
-const printCss = readFileSync(path.join(ROOT, 'src', 'print.css'), 'utf8');
-const manualSteps = [...manualPanel.querySelectorAll('.print-manual-steps > li')];
-const manualCardsHaveOwnLabelsAndArt = manualSteps.length === 3 && manualSteps.every((step) =>
-  step.querySelector('h4')?.textContent.trim() &&
-  step.querySelector('.print-manual-card-copy')?.textContent.trim() &&
-  (step.querySelector('.print-manual-art') || step.querySelector('.print-manual-continue-art'))
-);
-assert(
-  manualPanel?.tagName === 'SECTION' && manualPanel.getAttribute('aria-labelledby') === 'print-manual-title' &&
-  manualPanel.getAttribute('aria-describedby').includes('print-manual-note') &&
-  document.getElementById('print-manual-title')?.textContent === 'Print the second side' &&
-  document.getElementById('print-manual-text')?.textContent.includes('reload the paper'),
-  'manual second-side panel is labelled and includes the requested title and reload subtitle'
-);
-assert(
-  document.getElementById('print-manual-step')?.textContent === 'Step 2 of 2' &&
-  document.getElementById('print-manual-printer-name')?.textContent === 'Printer not identified' &&
-  document.getElementById('print-manual-profile')?.textContent.includes('not verified'),
-  'manual panel has a progress indicator, printer field and an unverified default profile'
-);
-assert(
-  manualCardsHaveOwnLabelsAndArt &&
-  manualSteps[0].querySelector('h4').textContent.includes('Collect') &&
-  manualSteps[1].querySelector('h4').textContent.includes('feed guide') &&
-  manualSteps[2].querySelector('h4').textContent.includes('Continue') &&
-  manualSteps[0].querySelectorAll('svg').length === 1 &&
-  manualSteps[1].querySelectorAll('svg').length === 1 &&
-  manualSteps[2].querySelector('.print-manual-continue-chip')?.textContent.includes('Continue'),
-  'three numbered instructions have distinct labels, explanatory copy and local vector artwork'
-);
-assert(
-  manualPanel.querySelector('#btn-print-manual-continue')?.textContent.trim() === 'Continue' &&
-  manualPanel.querySelector('#btn-print-manual-cancel')?.textContent.trim() === 'Skip second side' &&
-  document.getElementById('btn-print-download') && document.getElementById('btn-print-cancel'),
-  'Continue, Skip second side, Cancel and print-ready PDF download actions remain available'
-);
-assert(
-  manualPanel.querySelector('#print-manual-loading-labels').textContent.includes('Feed direction varies') &&
-  manualPanel.querySelector('#print-manual-note-text').textContent.includes('model was not identified') &&
-  !/printed side down/i.test(manualPanel.textContent),
-  'default guidance is clearly unverified and does not claim an unknown printer loads printed-side down'
-);
-const hpGuidance = getManualDuplexGuidance('HP LaserJet 1020');
-const otherGuidance = getManualDuplexGuidance('Brother HL-L2350DW');
-assert(
-  hpGuidance.id === 'hp-laserjet-1020' &&
-  hpGuidance.stepOne.text.includes('Without changing the stack’s orientation') &&
-  hpGuidance.stepOne.text.includes('same order') && hpGuidance.stepOne.text.includes('blank sheets') &&
-  hpGuidance.stepTwo.text.includes('Tray 1') && hpGuidance.stepTwo.text.includes('printed side down') &&
-  hpGuidance.loadingLabels.join('|') === 'Keep the same orientation|Printed side down',
-  'HP LaserJet 1020 guidance separates unchanged orientation, sheet order and printed-side-down loading'
-);
-assert(
-  otherGuidance.id === 'unverified' && otherGuidance.generic &&
-  !/printed side down/i.test(otherGuidance.stepTwo.text) &&
-  otherGuidance.stepTwo.text.includes('which side should face up or down') &&
-  getManualDuplexGuidance('system printer').printerName === 'Printer not identified',
-  'other or unidentified printers receive cautious, model-specific guidance rather than the HP feed sequence'
-);
-assert(
-  !/rotate\s*180|180\s*°|180\s*degrees/i.test(manualPanel.textContent) &&
-  /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/.test(printCss) &&
-  /@media \(max-width: 680px\)[\s\S]*?\.print-manual-steps\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(printCss) &&
-  /\.print-manual-card:not\(:last-child\)::after/.test(printCss),
-  'three-step flow is horizontal when space permits, stacks on narrow screens and has a clear no-rotation paper-flow connector'
-);
-assert(
-  /#print-dialog\[data-manual-pending="true"\][\s\S]*?#btn-print-current,[\s\S]*?#btn-print-submit/.test(printCss) &&
-  !/\.print-download-btn\s*\{\s*display:\s*none;/.test(printCss) &&
-  /prefers-reduced-motion/.test(printCss) && /:focus-visible/.test(printCss) &&
-  /@media \(max-height: 620px\)/.test(printCss),
-  'manual state keeps Download and Cancel, provides visible focus and reduced-motion support, and compacts for short windows'
-);
-assert(
-  document.getElementById('print-dialog-content') &&
-  document.getElementById('print-dialog').getAttribute('aria-modal') === 'true',
-  'manual instructions can replace the preview inside the existing accessible modal'
-);
 const printController = new PrintController({
   pdfjsLib: {},
   standardFontDataUrl: '',
-  getDoc: () => null,
-  getSourceBytes: () => null,
+  getDoc: () => ({ getPage: async () => ({ getViewport: () => ({ width: 600, height: 800 }) }) }),
+  getSourceBytes: () => new Uint8Array([37, 80, 68, 70, 45]),
   getCurrentPage: () => 2,
   getTotalPages: () => 5,
   getDocumentName: () => 'test.pdf',
@@ -202,125 +141,59 @@ const printController = new PrintController({
 });
 assert(!printController.isOpen, 'print controller starts closed');
 const validPrintForm = printController.validateSettings(printController.readSettings());
-assert(validPrintForm.valid && validPrintForm.summary.selectedCount === 5, 'default print form validates all pages');
-assert(validPrintForm.settings.duplexMode === 'simplex' && validPrintForm.settings.collate, 'print defaults are one-sided and collated');
-printController.applySettingsToForm({ ...validPrintForm.settings, duplexMode: 'shortEdge', collate: false, copies: 2 });
-assert(printController.readSettings().duplexMode === 'shortEdge' && !printController.readSettings().collate, 'two-sided and collation controls round-trip through the form');
-assert(printController.previewKey({ ...validPrintForm.settings, duplexMode: 'longEdge', collate: false, copies: 3 }) ===
-  printController.previewKey(validPrintForm.settings), 'native job choices do not regenerate the preview PDF');
-// Manual two-sided (no duplex unit): odd sheets first, even sheets after a reload.
+assert(validPrintForm.valid, 'default PDF preparation settings validate');
+assert(
+  !Object.hasOwn(printController.readSettings(), 'copies') &&
+  !Object.hasOwn(printController.readSettings(), 'duplexMode'),
+  'renderer preparation state contains no physical-printer settings'
+);
+const sameSettingsKey = printController.previewKey(validPrintForm.settings);
+assert(sameSettingsKey.includes('"paperSize":"A4"'), 'preview key tracks PDF preparation settings');
+
+// Opening the system viewer must be a direct consequence of an explicit click.
 {
-  // Mirror the state created by open() so focus management is exercised against
-  // a visible modal rather than jsdom's initially hidden HTML fixture.
-  printController.opened = true;
-  printController.ui.dialog.style.display = 'flex';
-  const { PDFDocument } = await import('pdf-lib');
-  const threePages = await PDFDocument.create();
-  for (let i = 0; i < 3; i += 1) threePages.addPage([210, 297]);
-  const composedBytes = await threePages.save();
-  printController.latestPdfBytes = composedBytes;
-  printController.updateActionState();
-  const pageCountOf = async (bytes) => (await PDFDocument.load(bytes)).getPageCount();
-  const calls = [];
-  let nextPrinterName = 'HP LaserJet 1020';
-  const fakeApi = {
-    printPdf: async (bytes, options) => {
-      calls.push({ pages: await pageCountOf(bytes), options });
-      return { ok: true, printerName: nextPrinterName };
+  const preparedBytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
+  const openCalls = [];
+  const saveCalls = [];
+  window.cambuzAPI = {
+    openPdfInSystemViewer: async (bytes, options) => {
+      openCalls.push({ bytes: new Uint8Array(bytes), options });
+      return { ok: true };
+    },
+    savePrintReadyPdf: async (bytes, options) => {
+      saveCalls.push({ bytes: new Uint8Array(bytes), options });
+      return { ok: false, canceled: true };
     },
   };
-  globalThis.window.cambuzAPI = fakeApi;
-  const manualBase = {
-    deviceName: 'HP LaserJet 1020', copies: 1, collate: true, duplexMode: 'manual',
-    paperSize: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297,
-  };
+  printController.opened = true;
+  printController.ui.dialog.style.display = 'flex';
+  printController.latestPdfBytes = preparedBytes;
+  printController.latestPreviewKey = sameSettingsKey;
+  printController.updateActionState();
+  assert(openCalls.length === 0 && !printController.ui.openSystemButton.disabled,
+    'preparing a PDF does not automatically launch another application');
 
-  const copiesForm = printController.validateSettings({ ...printController.readSettings(), duplexMode: 'manual', copies: '2' });
-  assert(!copiesForm.valid && document.getElementById('print-settings-error').textContent.includes('one copy at a time'),
-    'manual two-sided is limited to one copy with a clear message');
+  await printController.openInSystemViewer();
+  assert(openCalls.length === 1 && openCalls[0].options.suggestedName === 'test-print-ready.pdf' &&
+    Buffer.from(openCalls[0].bytes).equals(Buffer.from(preparedBytes)),
+  'explicit system-viewer action hands off the exact prepared bytes once');
+  assert(printController.isOpen && /viewer’s Print command/.test(printController.ui.status.textContent),
+    'successful handoff leaves the source document and preparation dialog open with delegated controls explained');
 
-  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
-  assert(calls.length === 1 && calls[0].pages === 2 && calls[0].options.duplexMode === 'simplex',
-    'manual pass 1 sends the odd sheets (2 of 3) as a one-sided job');
-  assert(printController.manualJob && printController.manualJob.backCount === 1,
-    'manual pass 2 (one even sheet) is held until the user confirms');
-  assert(!document.getElementById('print-manual-panel').hidden &&
-    printController.ui.dialog.dataset.manualPending === 'true' && printController.ui.content.hidden &&
-    printController.ui.dialogHeader.hidden && printController.ui.submitButton.hidden &&
-    printController.ui.dialog.getAttribute('aria-labelledby') === 'print-manual-title',
-  'manual workflow replaces the preview controls with its own accessible second-side state');
-  assert(printController.ui.manualText.textContent.includes('First side printed') &&
-    printController.ui.manualPrinterName.textContent === 'HP LaserJet 1020' &&
-    printController.ui.dialog.dataset.manualWorkflow === 'hp-laserjet-1020' &&
-    printController.ui.manualStepOneText.textContent.includes('same order') &&
-    printController.ui.manualStepOneText.textContent.includes('blank sheets') &&
-    printController.ui.manualStepTwoText.textContent.includes('printed side down') &&
-    [...printController.ui.manualLoadingLabels.querySelectorAll('span')].map((tag) => tag.textContent).join('|') ===
-      'Keep the same orientation|Printed side down' &&
-    document.activeElement === printController.ui.manualTitle,
-  'HP-specific instructions render distinctly and place focus at the heading after pass one');
-  assert(printController.ui.submitButton.disabled, 'submit is disabled while the second side is pending');
-  assert(!printController.ui.downloadButton.disabled && !printController.ui.cancelButton.disabled &&
-    !printController.ui.manualCancel.disabled && printController.ui.manualCancel.textContent.trim() === 'Skip second side',
-  'Download print-ready PDF, Cancel and Skip second side remain available during the pending pass');
+  await printController.downloadPdf();
+  assert(saveCalls.length === 1 && /Save cancelled/.test(printController.ui.status.textContent) &&
+    printController.latestPdfBytes === preparedBytes,
+  'save cancellation is handled without discarding the prepared artifact');
 
-  // Tab is trapped only among controls in the active manual-duplex state.
-  printController.ui.dialog.dispatchEvent(new window.KeyboardEvent('keydown', {
-    key: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
-  }));
-  assert(document.activeElement === printController.ui.cancelButton,
-    'Shift+Tab from the focused instruction heading stays inside the manual workflow');
-  printController.ui.cancelButton.focus();
-  printController.ui.dialog.dispatchEvent(new window.KeyboardEvent('keydown', {
-    key: 'Tab', bubbles: true, cancelable: true,
-  }));
-  assert(document.activeElement === printController.ui.manualCancel,
-    'Tab wraps from Cancel to the first visible manual-duplex action');
-  printController.ui.manualCancel.focus();
-  printController.ui.dialog.dispatchEvent(new window.KeyboardEvent('keydown', {
-    key: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
-  }));
-  assert(document.activeElement === printController.ui.cancelButton,
-    'Shift+Tab wraps from Skip second side to Cancel at the end of the modal');
+  window.cambuzAPI.openPdfInSystemViewer = async () => ({ ok: false, error: 'No registered viewer' });
+  await printController.openInSystemViewer();
+  assert(/Could not open the system PDF viewer: No registered viewer/.test(printController.ui.status.textContent) &&
+    printController.isOpen && !printController.busy,
+  'system-viewer launch failure is reported without crashing or closing the document');
 
-  await printController.continueManualDuplex();
-  assert(calls.length === 2 && calls[1].pages === 1 && calls[1].options.duplexMode === 'simplex' &&
-    calls[1].options.deviceName === 'HP LaserJet 1020' && calls[1].options.paperSize === 'A4' &&
-    calls[1].options.orientation === 'portrait',
-  'manual pass 2 sends the unchanged even-sheet PDF with the original printer and page-layout settings');
-  assert(printController.manualJob === null && document.getElementById('print-manual-panel').hidden &&
-    !printController.ui.content.hidden && !printController.ui.dialogHeader.hidden &&
-    !printController.ui.submitButton.hidden && !printController.ui.dialog.hasAttribute('data-manual-pending') &&
-    document.activeElement === printController.ui.cancelButton,
-  'manual panel closes after side two is sent, restores the print preview state and returns focus to Cancel');
-
-  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
-  printController.cancelManualDuplex();
-  assert(printController.manualJob === null && calls.length === 3 && document.activeElement === printController.ui.cancelButton &&
-    !printController.ui.dialog.hasAttribute('data-manual-pending') && !printController.ui.content.hidden,
-  'Skip second side clears the pending job without another print and restores the original preview state');
-
-  nextPrinterName = 'Brother HL-L2350DW';
-  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
-  assert(printController.ui.manualPrinterName.textContent === 'Brother HL-L2350DW' &&
-    printController.ui.dialog.dataset.manualWorkflow === 'unverified' &&
-    printController.ui.manualStepTwoText.textContent.includes('Cambuz cannot confirm') &&
-    !/printed side down/i.test(printController.ui.manualStepTwoText.textContent) &&
-    printController.ui.manualNoteText.textContent.includes('Brother HL-L2350DW'),
-  'state transition uses clearly labelled non-HP guidance for an unrecognized printer');
-  printController.cancelManualDuplex();
-  assert(calls.length === 4 && printController.manualJob === null,
-    'skipping an unverified printer workflow also avoids sending the second pass');
-
-  nextPrinterName = 'HP LaserJet 1020';
-  await printController.startManualDuplex(fakeApi, composedBytes, manualBase);
-  const callsBeforeDialogCancel = calls.length;
-  printController.ui.cancelButton.click();
-  assert(!printController.isOpen && printController.manualJob === null && printController.ui.manualPanel.hidden &&
-    !printController.ui.content.hidden && !printController.ui.dialog.hasAttribute('data-manual-pending') &&
-    calls.length === callsBeforeDialogCancel,
-  'Cancel exits the manual workflow and clears the second-side job without printing it');
-  delete globalThis.window.cambuzAPI;
+  printController.opened = false;
+  printController.ui.dialog.style.display = 'none';
+  delete window.cambuzAPI;
 }
 
 const invalidRangeForm = printController.validateSettings({ ...printController.readSettings(), pageMode: 'range', pageRange: '0' });

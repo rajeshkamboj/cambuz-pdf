@@ -70,7 +70,7 @@ the default is a one-line change (`DEFAULT_VIEW_MODE` in `src/renderer.js`).
 | **Accessibility** (tagged order, screen-reader support, high-contrast/large-text reflow) | **Partial.** The PDF.js text layer gives selectable DOM text; tagged-PDF structure is not used and no accessibility settings exist. | |
 | **Form data import/export (FDF/XFDF) and reset** | **Missing.** Values can be filled and saved into a new PDF only. | |
 | **OCR: batch pages, merged searchable text** | **Partial and deliberate.** One page per run, results in a separate box, never merged into the PDF or its search (documented). | Whole-document OCR with a real text layer is the natural next step. |
-| **Print: selection, current view, booklet, page scaling to printable area, printer capability query** | **Partial.** Current page / all / ranges, N-up, duplex and collation are implemented; per-printer non-printable margins are not queried (documented). | |
+| **Print: selection, current view, booklet, page scaling to printable area, printer capability query** | **Partial.** Cambuz prepares current/all/ranged pages, N-up, margins and scaling, then hands the exact PDF to the registered system viewer. Printer capabilities, copies, collation and duplex are delegated; booklet is absent. | |
 
 ### Deliberate non-features (documented, not defects)
 

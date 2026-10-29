@@ -8,6 +8,7 @@
 
 import fs from 'node:fs';
 import Module, { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +47,11 @@ const FAKE_START_URL = 'file:///app/src/index.html';
 // A value that cannot be confused with the real version: proves About reads app.getVersion().
 const APP_VERSION_UNDER_TEST = '9.8.7-about-test';
 const messageBoxes = [];
+const testTempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cambuz-main-test-'));
+const openedPaths = [];
+let openPathError = '';
+let nextSaveDialogResult = { canceled: true };
+let systemViewerPathUnderTest = '';
 
 class FakeSession {
   setPermissionRequestHandler(handler) {
@@ -71,13 +77,6 @@ class FakeWebContents {
   }
   getURL() {
     return FAKE_START_URL;
-  }
-  async getPrintersAsync() {
-    return [{ name: 'test-printer', displayName: 'Test printer', options: {} }];
-  }
-  print(options, callback) {
-    this.printOptions = options;
-    callback(true);
   }
 }
 class FakeBrowserWindow {
@@ -123,6 +122,7 @@ const fakeElectron = {
     getVersion: () => APP_VERSION_UNDER_TEST,
     requestSingleInstanceLock: () => true,
     getSystemLocale: () => 'en-IN',
+    getPath: (name) => name === 'temp' ? testTempRoot : path.join(testTempRoot, name),
   },
   BrowserWindow: FakeBrowserWindow,
   ipcMain: {
@@ -130,6 +130,7 @@ const fakeElectron = {
   },
   dialog: {
     showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+    showSaveDialog: async () => nextSaveDialogResult,
     showMessageBox: async (...args) => {
       messageBoxes.push(args);
       return { response: 0 };
@@ -146,6 +147,10 @@ const fakeElectron = {
   shell: {
     openExternal: async (url) => {
       externalUrls.push(url);
+    },
+    openPath: async (filePath) => {
+      openedPaths.push(filePath);
+      return openPathError;
     },
   },
   contextBridge: {
@@ -205,36 +210,60 @@ console.log('\n## Main process: read-file is unchanged');
   assert(missing.ok === false, 'read-file reports a missing file');
 }
 
-console.log('\n## Main process: native print options (no physical printer)');
+console.log('\n## Main process: print-ready export and system-viewer handoff');
 {
-  const print = handlers.get('print-pdf');
   const bytes = new Uint8Array(fs.readFileSync(path.join(repoRoot, 'samples', 'welcome.pdf')));
-  const base = { deviceName: 'test-printer', paperSize: 'A4', orientation: 'portrait', copies: 2 };
-  assert((await handlers.get('list-printers')({ sender: createdWindows[0].webContents }))[0].name === 'test-printer', 'printer enumeration returns system device names');
-  for (const duplexMode of ['simplex', 'longEdge', 'shortEdge']) {
-    const result = await print({}, bytes, { ...base, duplexMode, collate: false });
-    const window = createdWindows.at(-1);
-    assert(result.ok && window.webContents.printOptions.duplexMode === duplexMode &&
-      window.webContents.printOptions.collate === false && window.webContents.printOptions.copies === 2,
-    `direct print forwards ${duplexMode}, copies and uncollated setting to Electron`);
-    assert(window.webContents.printOptions.silent === true && window.options.icon.endsWith(path.join('assets', 'icon.png')),
-      'direct print uses selected device and branded transient window');
-    assert(!fs.existsSync(path.dirname(window.loadedFile)), 'temporary print PDF is removed after the job');
-  }
-  const dialogResult = await print({}, bytes, { ...base, deviceName: '', duplexMode: 'longEdge', collate: true });
-  assert(dialogResult.ok && createdWindows.at(-1).webContents.printOptions.silent === false &&
-    createdWindows.at(-1).webContents.printOptions.duplexMode === 'longEdge' &&
-    createdWindows.at(-1).webContents.printOptions.collate === true, 'system dialog receives initial duplex and collation choices');
-  const before = createdWindows.length;
-  for (const [options, message] of [
-    [{ ...base, duplexMode: 'invalid' }, 'Unsupported two-sided'],
-    [{ ...base, collate: 'false' }, 'Collate must'],
-    [{ ...base, deviceName: 'missing' }, 'no longer available'],
-  ]) {
-    const result = await print({}, bytes, options);
-    assert(!result.ok && result.error.includes(message) && createdWindows.length === before,
-      `invalid print request rejected before opening a print window: ${message}`);
-  }
+  assert(!handlers.has('print-pdf') && !handlers.has('list-printers') && !handlers.has('cancel-print'),
+    'broken direct-print and in-app printer-enumeration IPC routes are removed');
+  assert(handlers.has('open-pdf-in-system-viewer') && handlers.has('save-print-ready-pdf'),
+    'main process exposes separate system-viewer and print-ready export routes');
+
+  const openPrepared = handlers.get('open-pdf-in-system-viewer');
+  const opened = await openPrepared({}, bytes, { suggestedName: 'welcome-print-ready.pdf' });
+  const openedPath = openedPaths.at(-1);
+  systemViewerPathUnderTest = openedPath;
+  assert(opened.ok && typeof openedPath === 'string' && fs.existsSync(openedPath),
+    'explicit handoff creates a PDF and asks the OS to open it');
+  assert(Buffer.from(fs.readFileSync(openedPath)).equals(Buffer.from(bytes)),
+    'system viewer receives the exact prepared PDF bytes');
+  assert(path.basename(openedPath) === 'welcome-print-ready.pdf',
+    'system-viewer copy uses a safe descriptive PDF filename');
+
+  const openedBeforeInvalid = openedPaths.length;
+  const invalid = await openPrepared({}, new Uint8Array([1, 2, 3]), { suggestedName: 'bad.pdf' });
+  assert(!invalid.ok && /valid PDF/.test(invalid.error) && openedPaths.length === openedBeforeInvalid,
+    'invalid data is rejected before an external application is launched');
+
+  openPathError = 'No application is associated with PDF files';
+  const failed = await openPrepared({}, bytes, { suggestedName: 'failed.pdf' });
+  const failedPath = openedPaths.at(-1);
+  assert(!failed.ok && failed.error.includes('No application') && !fs.existsSync(path.dirname(failedPath)),
+    'system-viewer launch failure is returned and its temporary directory is removed');
+  openPathError = '';
+
+  const savePrepared = handlers.get('save-print-ready-pdf');
+  nextSaveDialogResult = { canceled: true };
+  const canceled = await savePrepared({}, bytes, { suggestedName: 'welcome-print-ready.pdf' });
+  assert(canceled.canceled && !canceled.ok, 'native print-ready Save dialog cancellation is handled');
+
+  const exportPath = path.join(testTempRoot, 'exported-print-ready.pdf');
+  nextSaveDialogResult = { canceled: false, filePath: exportPath };
+  const saved = await savePrepared({}, bytes, { suggestedName: 'welcome-print-ready.pdf' });
+  assert(saved.ok && Buffer.from(fs.readFileSync(exportPath)).equals(Buffer.from(bytes)),
+    'print-ready export writes the exact prepared PDF artifact');
+
+  const {
+    cleanupStaleViewerCopies,
+    createViewerCopy,
+  } = require(path.join(repoRoot, 'src', 'system-pdf.cjs'));
+  const stale = await createViewerCopy({
+    tempRoot: testTempRoot,
+    pdfBuffer: Buffer.from(bytes),
+    suggestedName: 'stale.pdf',
+  });
+  const cleanup = await cleanupStaleViewerCopies({ tempRoot: testTempRoot, now: Date.now(), maxAgeMs: -1 });
+  assert(cleanup.removed >= 2 && !fs.existsSync(stale.directory) && !fs.existsSync(path.dirname(openedPath)),
+    'bounded cleanup removes retained system-viewer temporary copies');
 }
 
 console.log('\n## Main process: page context menu');
@@ -341,7 +370,17 @@ console.log('\n## Main process: opening PDFs from the OS');
   const collectedAgain = await handshake({});
   assert(collectedAgain && collectedAgain.file === null, 'the pending file is consumed only once');
 
-  // Later arrivals are pushed straight to the renderer; the window is focused.
+  // If shell.openPath loops back because Cambuz is the registered PDF app, the
+  // prepared temporary copy must not replace the document being read.
+  const openMessagesBeforeSelfHandoff = sentToRenderer.filter((message) => message.channel === 'open-file-path').length;
+  secondInstance({}, ['/app/cambuz', systemViewerPathUnderTest]);
+  assert(
+    sentToRenderer.filter((message) => message.channel === 'open-file-path').length === openMessagesBeforeSelfHandoff &&
+    sentToRenderer.some((message) => message.channel === 'system-viewer-unavailable'),
+    'self-associated system-viewer handoff preserves the current PDF and reports the fallback'
+  );
+
+  // Later ordinary arrivals are pushed straight to the renderer; the window is focused.
   window.focused = false;
   secondInstance({}, ['/app/cambuz', '--remote-debugging-port=9331', '/tmp/second doc.pdf']);
   assert(window.focused === true, 'a second instance focuses the window');
@@ -378,6 +417,20 @@ require(path.join(repoRoot, 'preload.js'));
     assert(call && call.channel === 'read-sample' && call.args[0] === 'cambuz-demo.pdf', 'readSample forwards the name to the read-sample channel');
   }
   assert(typeof api?.readFile === 'function', 'the preload bridge still exposes readFile');
+  assert(typeof api?.openPdfInSystemViewer === 'function' && typeof api?.savePrintReadyPdf === 'function',
+    'preload exposes separate system-viewer and print-ready save actions');
+  assert(typeof api?.printPdf === 'undefined' && typeof api?.getPrinters === 'undefined' && typeof api?.cancelPrint === 'undefined',
+    'preload no longer exposes direct printing or in-app printer enumeration');
+  if (typeof api?.openPdfInSystemViewer === 'function') {
+    await api.openPdfInSystemViewer(new Uint8Array([37, 80, 68, 70, 45]), { suggestedName: 'prepared.pdf' });
+    const call = invoked[invoked.length - 1];
+    assert(call?.channel === 'open-pdf-in-system-viewer', 'system-viewer action invokes only its explicit IPC channel');
+  }
+  if (typeof api?.savePrintReadyPdf === 'function') {
+    await api.savePrintReadyPdf(new Uint8Array([37, 80, 68, 70, 45]), { suggestedName: 'prepared.pdf' });
+    const call = invoked[invoked.length - 1];
+    assert(call?.channel === 'save-print-ready-pdf', 'print-ready export invokes its separate IPC channel');
+  }
   assert(api?.systemLocale === undefined, 'systemLocale is undefined when main.js forwarded no locale');
   assert(typeof api?.rendererReady === 'function', 'the preload bridge exposes rendererReady');
   if (api && typeof api.rendererReady === 'function') {

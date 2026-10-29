@@ -1,7 +1,12 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const {
+  DEFAULT_MAX_AGE_MS,
+  cleanupStaleViewerCopies,
+  createViewerCopy,
+  removeViewerCopy,
+} = require('./src/system-pdf.cjs');
 const { getOcrStatus, recognizePng } = require('./src/ocr-engine.cjs');
 const { bundledSamplePath } = require('./src/bundled-samples.cjs');
 const { buildPageContextMenu } = require('./src/context-menu.cjs');
@@ -401,258 +406,77 @@ ipcMain.handle('dialog-open-pdfs', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-// Return only printer fields needed by the settings UI.
-//
-// Electron 36 removed PrinterInfo.isDefault (and status) upstream, and there is
-// no replacement API for the default printer. The field stays in this payload
-// so the preload contract is unchanged; it is simply always false on current
-// runtimes, and the renderer then falls back to its "Choose in system print
-// dialog…" choice, which still reaches the OS default through the native dialog.
-// Race a promise against a deadline. Used around OS printing calls, which can
-// block for a very long time when a (network) printer is offline — without a
-// deadline the print dialog would sit on "Sending…" until the app is quit.
-function withTimeout(promise, ms, message) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-ipcMain.handle('list-printers', async (event) => {
-  try {
-    const printers = await withTimeout(
-      event.sender.getPrintersAsync(),
-      15000,
-      'Listing printers timed out.'
-    );
-    return printers.map((printer) => ({
-      name: String(printer.name || ''),
-      displayName: String(printer.displayName || printer.name || ''),
-      description: String(printer.description || ''),
-      isDefault: Boolean(printer.isDefault),
-    }));
-  } catch (_) {
-    return [];
-  }
-});
-
+// Print-ready artifacts are bounded at the IPC boundary. Cambuz no longer
+// enumerates printers or submits silent/direct jobs: the prepared PDF is handed
+// to the registered system viewer only after an explicit user action.
 const MAX_PRINT_PDF_BYTES = 250 * 1024 * 1024;
-const PRINT_PAPER_SIZES_MM = {
-  A4: [210, 297],
-  Letter: [215.9, 279.4],
-  Legal: [215.9, 355.6],
-  A3: [297, 420],
-  A5: [148, 210],
-  Tabloid: [279.4, 431.8],
-};
 
 function asPdfBuffer(input) {
   if (input instanceof Uint8Array) {
-    if (input.byteLength > MAX_PRINT_PDF_BYTES) throw new Error('The print-ready PDF exceeds the 250 MiB print-job limit.');
+    if (input.byteLength > MAX_PRINT_PDF_BYTES) throw new Error('The print-ready PDF exceeds the 250 MiB limit.');
     return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
   }
   if (input instanceof ArrayBuffer) {
-    if (input.byteLength > MAX_PRINT_PDF_BYTES) throw new Error('The print-ready PDF exceeds the 250 MiB print-job limit.');
+    if (input.byteLength > MAX_PRINT_PDF_BYTES) throw new Error('The print-ready PDF exceeds the 250 MiB limit.');
     return Buffer.from(input);
   }
-  if (Array.isArray(input) && input.length <= MAX_PRINT_PDF_BYTES && input.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)) {
+  if (Array.isArray(input) && input.length <= MAX_PRINT_PDF_BYTES &&
+      input.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)) {
     return Buffer.from(input);
   }
-  throw new Error('Invalid print PDF data.');
+  throw new Error('Invalid print-ready PDF data.');
 }
 
-function getNativePaperSize(options) {
-  const size = PRINT_PAPER_SIZES_MM[options.paperSize];
-  if (!size) throw new Error('Unsupported paper size.');
-  if (options.orientation !== 'portrait' && options.orientation !== 'landscape') {
-    throw new Error('Unsupported paper orientation.');
-  }
-  const shortSide = Math.min(size[0], size[1]);
-  const longSide = Math.max(size[0], size[1]);
-  const widthMm = options.orientation === 'landscape' ? longSide : shortSide;
-  const heightMm = options.orientation === 'landscape' ? shortSide : longSide;
-  return {
-    width: Math.round(widthMm * 1000),
-    height: Math.round(heightMm * 1000),
-  };
+// Paths created for shell.openPath are tracked so that, if Cambuz itself is the
+// registered PDF viewer, the second-instance callback cannot replace the PDF
+// the user is currently reading with our temporary copy.
+const activeSystemViewerCopies = new Map();
+const viewerCleanupTimers = new Map();
+
+function forgetSystemViewerCopy(copy) {
+  if (!copy) return;
+  activeSystemViewerCopies.delete(path.resolve(copy.filePath));
+  const timer = viewerCleanupTimers.get(copy.directory);
+  if (timer) clearTimeout(timer);
+  viewerCleanupTimers.delete(copy.directory);
 }
 
-// In-flight native print jobs, keyed by the renderer's job id. An offline
-// printer can leave Electron's print callback pending for many minutes, so the
-// dialog can ask to abort a job instead of waiting for the print timeout (or
-// quitting the app). Cancelling settles the pending print below, and the
-// finally block then destroys the print window — which also dismisses the
-// native system print dialog when one is open.
-const activePrintJobs = new Map();
+async function cleanupSystemViewerCopy(copy) {
+  forgetSystemViewerCopy(copy);
+  await removeViewerCopy(copy).catch(() => {
+    // The registered viewer may still hold the file open on Windows. Startup
+    // cleanup retries it after the bounded retention period.
+  });
+}
 
-ipcMain.handle('cancel-print', async (_event, jobId) => {
-  const job = typeof jobId === 'string' ? activePrintJobs.get(jobId) : undefined;
-  if (!job) return false;
-  job.cancel();
-  return true;
-});
+function scheduleSystemViewerCleanup(copy) {
+  const timer = setTimeout(() => cleanupSystemViewerCopy(copy), DEFAULT_MAX_AGE_MS);
+  timer.unref?.();
+  viewerCleanupTimers.set(copy.directory, timer);
+}
 
-// Native print route: the renderer sends the already-composed, previewed PDF.
-// Electron's print API then routes the job through the selected Windows driver.
-ipcMain.handle('print-pdf', async (_event, rawBytes, rawOptions = {}) => {
-  let tempDirectory = null;
-  let printWindow = null;
-  const jobId = typeof rawOptions?.jobId === 'string' && rawOptions.jobId.length <= 64
-    ? rawOptions.jobId
-    : null;
-  // Cancellation can arrive at any point (e.g. while printers are still being
-  // enumerated); every await below re-checks this flag, and once the native
-  // print call is pending `settle` resolves it immediately.
-  const job = { cancelled: false, settle: null, cancel: null };
-  job.cancel = () => {
-    job.cancelled = true;
-    job.settle?.({ success: false, cancelled: true });
-  };
-  if (jobId) {
-    activePrintJobs.get(jobId)?.cancel(); // defensive: a duplicate id replaces the old job
-    activePrintJobs.set(jobId, job);
-  }
-  const throwIfCancelled = () => {
-    if (job.cancelled) throw new Error('Print cancelled.');
-  };
+ipcMain.handle('open-pdf-in-system-viewer', async (_event, rawBytes, rawOptions = {}) => {
+  let copy = null;
   try {
-    const pdfBuffer = asPdfBuffer(rawBytes);
-    if (pdfBuffer.length < 5 || pdfBuffer.length > MAX_PRINT_PDF_BYTES) {
-      throw new Error('The print-ready PDF is empty or exceeds the 250 MiB print-job limit.');
-    }
-    if (!pdfBuffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
-      throw new Error('The print data is not a valid PDF file.');
-    }
-
-    const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
-    const copies = Number(options.copies);
-    if (!Number.isInteger(copies) || copies < 1 || copies > 99) {
-      throw new Error('Copies must be a whole number from 1 to 99.');
-    }
-    const duplexMode = options.duplexMode ?? 'simplex';
-    if (!['simplex', 'longEdge', 'shortEdge'].includes(duplexMode)) {
-      throw new Error('Unsupported two-sided printing mode.');
-    }
-    const collate = options.collate ?? true;
-    if (typeof collate !== 'boolean') throw new Error('Collate must be on or off.');
-    const pageSize = getNativePaperSize(options);
-    const printerName = typeof options.deviceName === 'string' ? options.deviceName.trim() : '';
-
-    if (printerName) {
-      // Printer enumeration can stall on an offline network printer; never
-      // let it block the job forever.
-      const installedPrinters = await withTimeout(
-        mainWindow.webContents.getPrintersAsync(),
-        20000,
-        'Checking the printer timed out. It may be offline — refresh the printer list and try again.'
-      );
-      throwIfCancelled();
-      if (!installedPrinters.some((printer) => printer.name === printerName)) {
-        throw new Error('The selected printer is no longer available. Refresh the printer list and try again.');
-      }
-    }
-
-    tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cambuz-print-'));
-    const pdfPath = path.join(tempDirectory, 'print-job.pdf');
-    await fs.promises.writeFile(pdfPath, pdfBuffer);
-
-    printWindow = new BrowserWindow({
-      parent: mainWindow,
-      width: 900,
-      height: 700,
-      show: !printerName, // native system dialog must have a visible owner
-      autoHideMenuBar: true,
-      backgroundColor: '#ffffff',
-      icon: path.join(__dirname, 'assets', 'icon.png'),
-      webPreferences: {
-        plugins: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
+    const buffer = validatePdfForSave(rawBytes);
+    const suggestedName = safeFileName(rawOptions?.suggestedName || 'document-print-ready.pdf');
+    copy = await createViewerCopy({
+      tempRoot: app.getPath('temp'),
+      pdfBuffer: buffer,
+      suggestedName,
     });
-    // The print window is transient and hidden in silent mode; links inside
-    // the printed document must not spawn windows anywhere.
-    printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    activeSystemViewerCopies.set(path.resolve(copy.filePath), copy);
 
-    await withTimeout(
-      printWindow.loadFile(pdfPath),
-      30000,
-      'Preparing the print job timed out. Please try again.'
-    );
-    throwIfCancelled();
-    // Allow Chromium's built-in PDF viewer to finish initializing before the
-    // native print call; did-finish-load alone can precede PDF plugin setup.
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    throwIfCancelled();
-
-    const nativeOptions = {
-      silent: Boolean(printerName),
-      printBackground: true,
-      color: true,
-      landscape: options.orientation === 'landscape', // matches the prepared sheet's MediaBox
-      copies,
-      collate,
-      duplexMode,
-      deviceName: printerName || undefined,
-      pageSize,
-      pagesPerSheet: 1, // N-up has already been composed in the prepared PDF
-      scaleFactor: 100,
-      margins: { marginType: 'none' },
-    };
-
-    const outcome = await new Promise((resolve) => {
-      let settled = false;
-      let timeout;
-      const settle = (value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        if (job.settle === settle) job.settle = null;
-        resolve(value);
-      };
-      // Expose this to the job record so cancel-print can end the wait now
-      // instead of whenever the (possibly offline) printer responds.
-      job.settle = settle;
-      // Silent printing only needs to spool the job, so a minute is generous.
-      // The system-dialog route may legitimately wait on the user, so it keeps
-      // a long bound — the dialog's "Cancel print" covers a stuck printer.
-      timeout = setTimeout(() => {
-        settle({
-          success: false,
-          failureReason: 'The printer did not respond in time. Check that it is switched on and connected, then try again.',
-        });
-      }, printerName ? 60000 : 10 * 60 * 1000);
-      // If the user closes the print window (e.g. because the native print UI
-      // is stuck on an offline printer), Electron's print callback may never
-      // fire — treat closing the window as cancelling this job.
-      printWindow.once('closed', () => settle({ success: false, cancelled: true }));
-      try {
-        printWindow.webContents.print(nativeOptions, (success, failureReason) => {
-          settle({ success, failureReason });
-        });
-      } catch (error) {
-        settle({ success: false, failureReason: error.message });
-      }
-    });
-
-    if (outcome.cancelled) return { ok: false, cancelled: true };
-    if (!outcome.success) {
-      throw new Error(outcome.failureReason || 'The native printer did not accept the print job.');
-    }
-    return { ok: true, printerName: printerName || 'system printer' };
-  } catch (err) {
-    if (job.cancelled) return { ok: false, cancelled: true };
-    return { ok: false, error: err.message || 'Printing failed.' };
-  } finally {
-    if (jobId && activePrintJobs.get(jobId) === job) activePrintJobs.delete(jobId);
-    if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
-    if (tempDirectory) {
-      await fs.promises.rm(tempDirectory, { recursive: true, force: true }).catch(() => {});
-    }
+    // shell.openPath opens the exact PDF with the OS registered application. It
+    // does not request printing itself, so no job is silently submitted and the
+    // system viewer retains printer selection and cancellation control.
+    const errorMessage = await shell.openPath(copy.filePath);
+    if (errorMessage) throw new Error(errorMessage);
+    scheduleSystemViewerCleanup(copy);
+    return { ok: true };
+  } catch (error) {
+    if (copy) await cleanupSystemViewerCopy(copy);
+    return { ok: false, error: error.message || 'The system PDF viewer could not be opened.' };
   }
 });
 
@@ -714,6 +538,33 @@ async function confirmOverwrite(targetPath, originalPath) {
   });
   return response.response === 1;
 }
+
+// Print-ready export is separate from opening/printing. It writes the exact
+// bytes previewed by PDF.js and never treats a successful write as proof that a
+// physical printer will render them correctly.
+ipcMain.handle('save-print-ready-pdf', async (_event, rawBytes, rawOptions = {}) => {
+  try {
+    const buffer = validatePdfForSave(rawBytes);
+    const suggested = safeFileName(rawOptions?.suggestedName || 'document-print-ready.pdf');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save print-ready PDF',
+      defaultPath: path.join(app.getPath('documents'), suggested),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+
+    let targetPath = path.resolve(result.filePath);
+    if (!/\.pdf$/i.test(targetPath)) targetPath += '.pdf';
+    if (fs.existsSync(targetPath)) {
+      const confirmed = await confirmOverwrite(targetPath, '');
+      if (!confirmed) return { ok: false, canceled: true };
+    }
+    await writeFileAtomically(targetPath, buffer);
+    return { ok: true, path: targetPath, name: path.basename(targetPath) };
+  } catch (error) {
+    return { ok: false, error: error.message || 'The print-ready PDF could not be saved.' };
+  }
+});
 
 // Save As / Duplicate: the user picks the destination in a native dialog.
 ipcMain.handle('save-pdf', async (_event, rawBytes, rawOptions = {}) => {
@@ -821,6 +672,19 @@ function focusMainWindow() {
 
 function deliverOsFile(filePath) {
   if (typeof filePath !== 'string' || !filePath) return;
+  const resolved = path.resolve(filePath);
+  const viewerCopy = activeSystemViewerCopies.get(resolved);
+  if (viewerCopy) {
+    // Cambuz is currently the registered PDF application. Do not replace the
+    // user's open document with the temporary handoff copy.
+    cleanupSystemViewerCopy(viewerCopy);
+    if (rendererIsReady && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('system-viewer-unavailable', {
+        message: 'Cambuz is registered as the system PDF viewer, so it cannot hand this file to a different app automatically. Download the print-ready PDF and use “Open with” to choose another viewer.',
+      });
+    }
+    return;
+  }
   if (rendererIsReady && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('open-file-path', filePath);
   } else {
@@ -859,6 +723,9 @@ app.on('open-file', (event, filePath) => {
 app.whenReady().then(() => {
   const startupPdf = pdfPathFromArgv(process.argv);
   if (startupPdf) pendingOsFile = startupPdf;
+  // Best-effort cleanup only. A locked Windows file is retained and retried on
+  // a later launch; certificate/TLS settings and file permissions are untouched.
+  cleanupStaleViewerCopies({ tempRoot: app.getPath('temp') }).catch(() => {});
   createWindow();
 });
 

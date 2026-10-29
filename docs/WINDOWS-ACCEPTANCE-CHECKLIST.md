@@ -28,8 +28,8 @@ from commit `ac2b848` (or the commit named in the release notes). Check SHA-256 
 | 15 | Open a copy-restricted document (for example `secure-permissions-only.pdf` from the test fixtures, or your own): selection and Ctrl+C are refused with a message; Notepad receives nothing from the document. | | |
 | 16 | On that restricted document, the search box still accepts typing and Ctrl+C in the search box. | | |
 | 17 | Open a password-protected PDF: the prompt appears; wrong password is refused; right password opens it. | | |
-| 18 | Print preview opens and shows the page sheets; page range and copies change the preview. | | |
-| 19 | **Physical print** to a real printer: a page prints with the expected size and orientation. (Record printer model.) | | |
+| 18 | Print preparation opens and previews the selected pages; change page range, paper, orientation, margins and N-up, then confirm **Download print-ready PDF** saves the same artifact. | | |
+| 19 | Click **Open PDF in system viewer**: the registered viewer opens only after the click, the original stays open in Cambuz, and its Print command permits printer selection and cancellation. | | |
 | 20 | Page tools (rotate, delete, reorder, merge, split, extract) work on a copy; the original file is unchanged until Save As. | | |
 | 21 | Form sample: fields can be filled and "Save Filled Form" writes a new file. | | |
 | 22 | Repeated open and close of several documents: no crash, no frozen window. | | |
@@ -39,9 +39,9 @@ from commit `ac2b848` (or the commit named in the release notes). Check SHA-256 
 | 26 | Portable exe runs from a folder on a USB drive or desktop without installing. | | |
 | 27 | Uninstall from Apps & features: program removed, Start Menu entry gone, `.pdf` association removed. | | |
 | 28 | Optional: with Tesseract installed, a scanned page can be recognised with OCR; without it, the app says so. | | |
-| 29 | On a duplex-capable printer, print a multi-sheet document one-sided, then long-edge and short-edge duplex; verify page order and flip direction (also try 2-up and landscape). Test both a named printer and the system dialog; record any driver overrides. | | |
-| 30 | Print two copies collated and uncollated; verify physical output order. On a simplex-only printer, verify that requesting duplex does not silently promise two-sided output. | | |
-| 31 | Confirm the transparent icon appears on the installer, installed/portable exe, Start Menu, taskbar, About dialog and the native print window; inspect small icon sizes on both light and dark backgrounds. | | |
+| 29 | Print the exact downloaded artifact through the registered system viewer: test one-sided output, size/orientation, normal black-on-white, grayscale/transparency, a legitimate dark page, and Hindi/Punjabi. Record printer and viewer. | | |
+| 30 | On a duplex-capable printer, choose duplex in the system viewer/driver. On a simplex printer, run its manual-duplex procedure without any Cambuz rotation or reordering; verify both sides and page order. | | |
+| 31 | Compare the same prepared artifact printed from the system viewer with the old Cambuz result; verify no solid-black pages. This is the required physical acceptance test, not covered by automation. | | |
 | 32 | Continuous scroll: open a long document, click the toolbar **Page/Scroll** button (or `Ctrl+Shift+M`) and scroll through several pages — the pages stack without gaps or jumps, the page box and status line follow the scroll, and each page appears as it enters the window. | | |
 | 33 | Continuous scroll, zoom and rotation: zoom in and out and rotate while scrolling; the reader stays on the same page, and reading returns to the same place. | | |
 | 34 | Continuous scroll, search: search for a word, use next/previous across pages, then scroll away and back — highlights stay on the right pages. | | |

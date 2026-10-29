@@ -50,7 +50,7 @@ Gatekeeper will block it until you approve it manually.
   thumbnails and bookmarks sidebar.
 - Search within the document, with next and previous results.
 - Text selection and Ctrl+C copy, including Hindi and Punjabi text with valid Unicode mappings.
-- Print preview and printing through the Windows print dialog.
+- Print-ready PDF preview/export plus an explicit handoff to the registered system PDF viewer, whose normal Print command controls Windows printers and driver settings.
 - Page tools: rotate, delete, extract, reorder, merge and split, on a working copy.
 - Form filling and saving filled forms.
 - Password-protected documents, and document permissions (print, copy, forms, changes).
@@ -81,7 +81,7 @@ and it does not stop a person from retyping or photographing the page.
 - **Electron 44 runtime.** Installers are about 37 MiB larger than the Electron 28 builds
   (Windows setup 118.3 MiB, previously 81.6 MiB). Idle memory of the Windows app is about
   50 MiB higher in automated measurements. Both changes were accepted for this release.
-- **Physical printing is not verified.** CI prepared preview PDFs but did not send a job to a printer.
+- **Physical printing is not verified.** CI prepared, inspected, exported and handed off PDFs but did not send a job to a physical printer.
 - **Scanned pages need OCR.** Without the optional engine, they show as images only.
 - **Broken font mappings.** Some PDFs have missing or wrong ToUnicode data. Copied text may be
   missing or wrong. Cambuz does not substitute characters.
