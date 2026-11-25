@@ -453,32 +453,70 @@ function scheduleSystemViewerCleanup(copy) {
   viewerCleanupTimers.set(copy.directory, timer);
 }
 
-let nativePrintActive = false;
+function nativePrintHelper() {
+  return app.isPackaged ? path.join(process.resourcesPath, 'native-print', 'CambuzPrint.exe')
+    : path.join(__dirname, '.native-print', 'CambuzPrint.exe');
+}
+
+function isReaderPrintRequest(event) {
+  return process.platform === 'win32' && event.sender === mainWindow?.webContents &&
+    event.senderFrame === event.sender.mainFrame;
+}
+
+ipcMain.handle('default-printer', async (event) => {
+  if (!isReaderPrintRequest(event)) return null;
+  return new Promise(resolve => {
+    require('node:child_process').execFile(nativePrintHelper(), ['--default-printer'],
+      { timeout: 7000 }, (error, stdout) => resolve(error ? null : stdout.trim()));
+  });
+});
+
+let pendingPrint;
+ipcMain.handle('cancel-native-print', event => {
+  if (!isReaderPrintRequest(event) || !pendingPrint || pendingPrint.submitted) return false;
+  pendingPrint.canceled = true;
+  pendingPrint.child?.kill();
+  return true;
+});
+
 ipcMain.handle('native-print', async (event, rawBytes, name) => {
-  if (process.platform !== 'win32' || event.sender !== mainWindow?.webContents ||
-      event.senderFrame !== event.sender.mainFrame) return { ok: false, error: 'Native printing is unavailable.' };
-  if (nativePrintActive) return { ok: false, error: 'Another print dialog is open.' };
-  nativePrintActive = true;
+  if (!isReaderPrintRequest(event)) return { ok: false, error: 'Native printing is unavailable.' };
+  if (pendingPrint) return { ok: false, error: 'Another print dialog is open.' };
+  const job = pendingPrint = { canceled: false, submitted: false };
+  const owner = mainWindow;
   let copy;
   try {
     copy = await createViewerCopy({
       tempRoot: app.getPath('temp'), pdfBuffer: validatePdfForSave(rawBytes), suggestedName: safeFileName(name),
     });
-    const helper = app.isPackaged
-      ? path.join(process.resourcesPath, 'native-print', 'CambuzPrint.exe')
-      : path.join(__dirname, '.native-print', 'CambuzPrint.exe');
-    return await new Promise((resolve) => {
-      require('node:child_process').execFile(helper, [copy.filePath], { windowsHide: true }, (error, stdout, stderr) => {
-        if (!error) resolve({ ok: true });
-        else if (error.code === 2) resolve({ canceled: true });
-        else resolve({ ok: false, error: stderr.trim() || error.message });
+    if (job.canceled) return { canceled: true };
+    const hwnd = owner.getNativeWindowHandle().readBigUInt64LE().toString();
+    return await new Promise(resolve => {
+      const child = job.child = require('node:child_process').execFile(nativePrintHelper(), [copy.filePath, hwnd],
+        (error, stdout, stderr) => {
+          clearTimeout(startup);
+          if (job.canceled) resolve({ canceled: true });
+          else if (job.timedOut) resolve({ ok: false, error: 'Windows did not finish loading the printer driver. Check your default printer and try again.' });
+          else if (!error) resolve({ ok: true });
+          else if (error.code === 2) resolve({ canceled: true });
+          else resolve({ ok: false, error: stderr.trim() || error.message });
+        });
+      const startup = setTimeout(() => { job.timedOut = true; child.kill(); }, 30000);
+      child.stdin.on('error', () => {}); // The helper may exit during cancellation.
+      require('node:readline').createInterface({ input: child.stdout }).on('line', line => {
+        if (line === 'dialog') clearTimeout(startup);
+        if (line === 'confirmed' && !job.canceled && !job.timedOut) {
+          job.submitted = true;
+          child.stdin.end('submit\n');
+        }
       });
     });
   } catch (error) {
     return { ok: false, error: error.message };
   } finally {
     if (copy) await removeViewerCopy(copy).catch(() => {});
-    nativePrintActive = false;
+    if (!owner.isDestroyed() && !owner.isEnabled()) owner.setEnabled(true);
+    pendingPrint = null;
   }
 });
 

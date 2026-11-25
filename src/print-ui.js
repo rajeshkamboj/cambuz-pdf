@@ -162,6 +162,10 @@ export class PrintController {
       note.nextElementSibling.textContent = 'Choose Print to select a printer, copies and device preferences. Match the driver paper size to the prepared sheet. Content inside the printer’s hardware margins may be clipped.';
       note.nextElementSibling.nextElementSibling.textContent = 'For two-sided output, select a duplex option supported by your printer driver.';
     }
+    element('btn-print-stop').addEventListener('click', async () => {
+      const canceled = await window.cambuzAPI.cancelNativePrint();
+      if (!canceled && this.busy) this.setStatus('Submitting to Windows. Use the printer queue to cancel a submitted job.');
+    });
     this.ui.nativeButton.addEventListener('click', () => this.printNative());
     this.ui.openSystemButton.addEventListener('click', () => this.openInSystemViewer());
     this.ui.downloadButton.addEventListener('click', () => this.downloadPdf());
@@ -219,6 +223,17 @@ export class PrintController {
     if (this.opened) return;
 
     this.opened = true;
+    if (window.cambuzAPI?.getDefaultPrinter) {
+      const label = element('print-default-printer');
+      label.hidden = false;
+      label.textContent = 'Checking Windows default printer…';
+      const request = this.printerLookup = window.cambuzAPI.getDefaultPrinter();
+      request.catch(() => null).then(name => {
+        if (this.printerLookup !== request) return;
+        label.textContent = name ? 'Windows default printer: ' + name :
+          name === '' ? 'No Windows default printer is configured.' : 'Windows default printer unavailable.';
+      });
+    }
     this.ui.dialog.style.display = 'flex';
     this.ui.documentLabel.textContent = `${this.getDocumentName()} · ${this.getTotalPages()} page${this.getTotalPages() === 1 ? '' : 's'}`;
     this.ui.currentPageLabel.textContent = `(page ${this.getCurrentPage()} of ${this.getTotalPages()})`;
@@ -647,7 +662,8 @@ export class PrintController {
     try {
       const bytes = await this.currentPreparedBytes();
       if (!bytes) return;
-      this.setStatus('Choose your Windows printer and settings…');
+      element('btn-print-stop').style.display = '';
+      this.setStatus('Opening Windows printer settings…');
       const result = await window.cambuzAPI.printNative(bytes, this.preparedFileName());
       if (result?.canceled) this.setStatus('Printing cancelled.');
       else if (result?.ok) this.setStatus('Job submitted to the Windows print queue.');
@@ -655,6 +671,7 @@ export class PrintController {
     } catch (error) {
       this.setStatus(`Windows printing failed: ${error.message}`, true);
     } finally {
+      element('btn-print-stop').style.display = 'none';
       this.busy = false;
       this.updateActionState();
     }
