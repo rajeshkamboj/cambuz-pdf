@@ -455,7 +455,7 @@ jobs:
           gradle-version: '8.9'
       - name: Build Android packages
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
           gradle -p android assembleDebug assembleRelease lintRelease
       - name: Package and verify installable APK
         id: package
