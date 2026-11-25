@@ -157,11 +157,32 @@ export class PrintController {
     if (typeof window.cambuzAPI?.printNative === 'function') {
       this.ui.nativeButton.style.display = '';
       this.ui.openSystemButton.className = 'btn-secondary';
-      const note = element('print-system-note-title');
-      note.textContent = 'Windows printer settings';
-      note.nextElementSibling.textContent = 'Choose Print to select a printer, copies and device preferences. Match the driver paper size to the prepared sheet. Content inside the printer’s hardware margins may be clipped.';
-      note.nextElementSibling.nextElementSibling.textContent = 'For two-sided output, select a duplex option supported by your printer driver.';
+      element('print-device-controls').style.display = '';
+      element('print-system-note-title').parentElement.hidden = true;
     }
+    element('print-printer').addEventListener('change', () => {
+      this.preferenceToken = null;
+      this.updateActionState();
+    });
+    element('print-copies').addEventListener('input', () => this.updateActionState());
+    element('print-preferences').addEventListener('click', async () => {
+      if (this.busy) return;
+      this.busy = true;
+      this.updateActionState();
+      try {
+        const reply = await window.cambuzAPI.printerPreferences(element('print-printer').value, this.preferenceToken);
+        if (reply.error) throw new Error(reply.error);
+        if (reply.token) {
+          this.preferenceToken = reply.token;
+          this.setStatus('Printer preferences applied to this print job.');
+        }
+      } catch (error) {
+        this.setStatus(error.message, true);
+      } finally {
+        this.busy = false;
+        this.updateActionState();
+      }
+    });
     element('btn-print-stop').addEventListener('click', async () => {
       const canceled = await window.cambuzAPI.cancelNativePrint();
       if (!canceled && this.busy) this.setStatus('Submitting to Windows. Use the printer queue to cancel a submitted job.');
@@ -223,15 +244,24 @@ export class PrintController {
     if (this.opened) return;
 
     this.opened = true;
-    if (window.cambuzAPI?.getDefaultPrinter) {
-      const label = element('print-default-printer');
-      label.hidden = false;
-      label.textContent = 'Checking Windows default printer…';
-      const request = this.printerLookup = window.cambuzAPI.getDefaultPrinter();
-      request.catch(() => null).then(name => {
-        if (this.printerLookup !== request) return;
-        label.textContent = name ? 'Windows default printer: ' + name :
-          name === '' ? 'No Windows default printer is configured.' : 'Windows default printer unavailable.';
+    if (window.cambuzAPI?.listPrintDevices) {
+      const select = element('print-printer');
+      select.replaceChildren(select.options[0]);
+      element('print-copies').value = '1';
+      element('print-collate').checked = true;
+      this.preferenceToken = null;
+      const request = this.printerLookup = window.cambuzAPI.listPrintDevices();
+      request.catch(() => []).then(devices => {
+        if (!this.opened || this.printerLookup !== request) return;
+        for (const device of devices) {
+          const option = document.createElement('option');
+          option.value = device.name;
+          option.textContent = device.name + (device.primary ? ' (Windows default)' : '');
+          option.dataset.status = device.status || '';
+          select.append(option);
+          if (device.primary) select.value = device.name;
+        }
+        this.updateActionState();
       });
     }
     this.ui.dialog.style.display = 'flex';
@@ -413,7 +443,16 @@ export class PrintController {
       this.latestPreviewKey === this.previewKey(validation.settings)
     );
     this.ui.openSystemButton.disabled = !previewReady || this.busy;
-    this.ui.nativeButton.disabled = !previewReady || this.busy;
+    const printer = element('print-printer');
+    const copies = element('print-copies');
+    printer.disabled = this.busy;
+    copies.disabled = !printer.value || this.busy;
+    element('print-collate').disabled = copies.disabled || copies.valueAsNumber < 2;
+    element('print-preferences').disabled = !printer.value || this.busy;
+    element('print-device-status').textContent = printer.selectedOptions[0]?.dataset.status || '';
+    this.ui.nativeButton.textContent = printer.value ? 'Print' : 'Print…';
+    this.ui.nativeButton.disabled = !previewReady || this.busy || (printer.value && !copies.checkValidity()) ||
+      (printer.value && !Number.isInteger(copies.valueAsNumber));
     this.ui.downloadButton.disabled = !previewReady || this.busy;
     this.ui.cancelButton.disabled = this.busy;
     this.ui.closeButton.disabled = this.busy;
@@ -663,8 +702,11 @@ export class PrintController {
       const bytes = await this.currentPreparedBytes();
       if (!bytes) return;
       element('btn-print-stop').style.display = '';
-      this.setStatus('Opening Windows printer settings…');
-      const result = await window.cambuzAPI.printNative(bytes, this.preparedFileName());
+      const printer = element('print-printer').value;
+      const device = printer ? { name: printer, copies: element('print-copies').valueAsNumber,
+        collate: element('print-collate').checked, token: this.preferenceToken } : undefined;
+      this.setStatus(printer ? 'Sending prepared sheets to ' + printer + '…' : 'Opening Windows printer settings…');
+      const result = await window.cambuzAPI.printNative(bytes, this.preparedFileName(), device);
       if (result?.canceled) this.setStatus('Printing cancelled.');
       else if (result?.ok) this.setStatus('Job submitted to the Windows print queue.');
       else throw new Error(result?.error || 'The print helper did not complete.');

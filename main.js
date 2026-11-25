@@ -463,11 +463,46 @@ function isReaderPrintRequest(event) {
     event.senderFrame === event.sender.mainFrame;
 }
 
-ipcMain.handle('default-printer', async (event) => {
-  if (!isReaderPrintRequest(event)) return null;
+let driverPreferences;
+ipcMain.handle('list-print-devices', async event => {
+  if (!isReaderPrintRequest(event)) return [];
   return new Promise(resolve => {
-    require('node:child_process').execFile(nativePrintHelper(), ['--default-printer'],
-      { timeout: 7000 }, (error, stdout) => resolve(error ? null : stdout.trim()));
+    require('node:child_process').execFile(nativePrintHelper(), ['--printers'], { timeout: 8000 }, (error, stdout) => {
+      if (error) return resolve([]);
+      resolve(stdout.trimEnd().split(/\r?\n/).filter(Boolean).map(line => {
+        const [encoded, primary, status] = line.split('|');
+        return { name: Buffer.from(encoded, 'base64').toString('utf8'), primary: primary === '1', status };
+      }));
+    });
+  });
+});
+
+function validPrinterName(name) {
+  return typeof name === 'string' && name.length > 0 && name.length <= 1024 && !name.includes('\0');
+}
+
+function preferenceBytes(name, token) {
+  if (!token) return '';
+  if (driverPreferences?.token !== token || driverPreferences.name !== name)
+    throw new Error('Printer preferences expired. Open printer preferences again.');
+  return driverPreferences.bytes;
+}
+
+ipcMain.handle('print-device-preferences', async (event, name, token) => {
+  if (!isReaderPrintRequest(event) || !validPrinterName(name)) throw new Error('Invalid printer.');
+  const previous = preferenceBytes(name, token);
+  const hwnd = mainWindow.getNativeWindowHandle().readBigUInt64LE().toString();
+  return new Promise(resolve => {
+    const child = require('node:child_process').execFile(nativePrintHelper(), ['--preferences', hwnd, name],
+      (error, stdout, stderr) => {
+        if (error?.code === 2) return resolve({ canceled: true });
+        if (error) return resolve({ error: stderr.trim() || error.message });
+        const id = require('node:crypto').randomUUID();
+        driverPreferences = { name, token: id, bytes: stdout.trim() };
+        resolve({ token: id });
+      });
+    child.stdin.on('error', () => {});
+    child.stdin.end(previous + '\n');
   });
 });
 
@@ -479,20 +514,26 @@ ipcMain.handle('cancel-native-print', event => {
   return true;
 });
 
-ipcMain.handle('native-print', async (event, rawBytes, name) => {
+ipcMain.handle('native-print', async (event, rawBytes, name, device) => {
   if (!isReaderPrintRequest(event)) return { ok: false, error: 'Native printing is unavailable.' };
   if (pendingPrint) return { ok: false, error: 'Another print dialog is open.' };
   const job = pendingPrint = { canceled: false, submitted: false };
   const owner = mainWindow;
   let copy;
   try {
+    if (device && (!validPrinterName(device.name) || !Number.isInteger(device.copies) ||
+        device.copies < 1 || device.copies > 999 || typeof device.collate !== 'boolean'))
+      throw new Error('Invalid printer or copy settings.');
+    const mode = device ? preferenceBytes(device.name, device.token) : '';
     copy = await createViewerCopy({
       tempRoot: app.getPath('temp'), pdfBuffer: validatePdfForSave(rawBytes), suggestedName: safeFileName(name),
     });
     if (job.canceled) return { canceled: true };
     const hwnd = owner.getNativeWindowHandle().readBigUInt64LE().toString();
     return await new Promise(resolve => {
-      const child = job.child = require('node:child_process').execFile(nativePrintHelper(), [copy.filePath, hwnd],
+      const args = [copy.filePath, hwnd];
+      if (device) args.push(device.name, String(device.copies), device.collate ? '1' : '0');
+      const child = job.child = require('node:child_process').execFile(nativePrintHelper(), args,
         (error, stdout, stderr) => {
           clearTimeout(startup);
           if (job.canceled) resolve({ canceled: true });
@@ -503,6 +544,7 @@ ipcMain.handle('native-print', async (event, rawBytes, name) => {
         });
       const startup = setTimeout(() => { job.timedOut = true; child.kill(); }, 30000);
       child.stdin.on('error', () => {}); // The helper may exit during cancellation.
+      if (device) child.stdin.write(mode + '\n');
       require('node:readline').createInterface({ input: child.stdout }).on('line', line => {
         if (line === 'dialog') clearTimeout(startup);
         if (line === 'confirmed' && !job.canceled && !job.timedOut) {

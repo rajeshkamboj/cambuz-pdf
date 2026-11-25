@@ -33,8 +33,10 @@ References:
 ## Windows native printing
 
 The Windows Print button passes the exact previewed PDF to a separate x64 helper.
-The helper opens a Windows PrintDialog for printer selection, copies and driver
-preferences. On confirmation, PDFium renders each sheet over opaque white, then
+The preview selects the Windows default printer when available. Choose a device,
+copies and collation there. Printer preferences opens the selected driver’s
+per-job dialog, including driver-specific manual duplex. Choosing “Choose in
+Windows…” retains the native PrintDialog fallback. On confirmation, PDFium renders each sheet over opaque white, then
 PrintDocument transfers it to the selected Windows queue. The job centers the
 prepared size on the driver paper, shrinking oversized sheets. Hardware margins
 can clip artwork. A queue submission does not confirm paper delivery.
