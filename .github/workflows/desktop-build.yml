@@ -437,6 +437,61 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  android:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release_signed: ${{ steps.package.outputs.release_signed }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android packages
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          gradle -p android assembleDebug assembleRelease lintRelease
+      - name: Package and verify installable APK
+        id: package
+        env:
+          KEYSTORE: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          STORE_PASS: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.ANDROID_KEY_ALIAS || '' }}
+          KEY_PASS: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.ANDROID_KEY_PASSWORD || '' }}
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          version=$(node -p "require('./package.json').version")
+          mkdir -p android-dist
+          if [[ -n "$KEYSTORE$STORE_PASS$KEY_ALIAS$KEY_PASS" ]]; then
+            : "${KEYSTORE:?missing Android keystore}" "${STORE_PASS:?missing store password}" "${KEY_ALIAS:?missing key alias}" "${KEY_PASS:?missing key password}"
+            umask 077
+            key=$(mktemp)
+            trap 'rm -f "$key"' EXIT
+            printf %s "$KEYSTORE" | base64 -d > "$key"
+            apk="android-dist/Cambuz-PDF-Reader-$version-android.apk"
+            "$tools/apksigner" sign --ks "$key" --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASS --key-pass env:KEY_PASS --out "$apk" android/build/outputs/apk/release/*-unsigned.apk
+            echo "release_signed=true" >> "$GITHUB_OUTPUT"
+          else
+            apk="android-dist/Cambuz-PDF-Reader-$version-android-preview.apk"
+            cp android/build/outputs/apk/debug/*.apk "$apk"
+            echo "release_signed=false" >> "$GITHUB_OUTPUT"
+            echo "Preview APK only. Configure Android signing secrets to include the APK in public Releases." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          "$tools/apksigner" verify --verbose "$apk"
+          "$tools/aapt" dump badging "$apk" | grep '^launchable-activity:'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cambuz-pdf-android
+          path: android-dist/*.apk
+          if-no-files-found: error
+
   # Publishes a complete five-binary GitHub Release when `main` or a manual `v*`
   # tag is pushed and all platform build jobs succeeded. Automatic `main` builds
   # create/update a pinned pre-release (`v<version>-build.<run_number>`), sync
@@ -448,8 +503,9 @@ jobs:
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
       needs.windows-x64.result == 'success' &&
       needs.linux-x64.result == 'success' &&
-      needs.macos-arm64.result == 'success'
-    needs: [windows-x64, linux-x64, macos-arm64]
+      needs.macos-arm64.result == 'success' &&
+      needs.android.result == 'success'
+    needs: [windows-x64, linux-x64, macos-arm64, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -525,6 +581,13 @@ jobs:
           name: cambuz-pdf-macos-arm64
           path: release-src/macos
 
+      - name: Download signed Android APK
+        if: needs.android.outputs.release_signed == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: cambuz-pdf-android
+          path: release-src/android
+
       - name: Report optional code-signature status
         shell: bash
         run: |
@@ -539,7 +602,9 @@ jobs:
             fi
           done
 
-      - name: Verify all five installers and write combined SHA256SUMS.txt
+      - name: Verify release packages and write combined SHA256SUMS.txt
+        env:
+          INCLUDE_ANDROID: ${{ needs.android.outputs.release_signed }}
         shell: bash
         run: |
           set -euo pipefail
@@ -563,6 +628,12 @@ jobs:
             '*-mac-arm64.dmg'
             '*-mac-arm64.zip'
           )
+          if [[ "$INCLUDE_ANDROID" == true ]]; then
+            android_packages=( ../release-src/android/*-android.apk )
+            [[ ${#android_packages[@]} == 1 ]]
+            cp "${android_packages[0]}" .
+            required_patterns+=( '*-android.apk' )
+          fi
           for pattern in "${required_patterns[@]}"; do
             matches=( $pattern )
             if [[ "${#matches[@]}" -ne 1 ]]; then
@@ -576,16 +647,16 @@ jobs:
           done
 
           binaries=( * )
-          if [[ "${#binaries[@]}" -ne 5 ]]; then
-            echo "::error::Expected exactly 5 release binaries before checksum generation, found ${#binaries[@]}: ${binaries[*]}"
+          if [[ "${#binaries[@]}" -ne "${#required_patterns[@]}" ]]; then
+            echo "::error::Unexpected count of release binaries before checksum generation, found ${#binaries[@]}: ${binaries[*]}"
             exit 1
           fi
 
           sha256sum "${binaries[@]}" > SHA256SUMS.txt
           cat SHA256SUMS.txt
           line_count="$(wc -l < SHA256SUMS.txt | tr -d ' ')"
-          if [[ "$line_count" -ne 5 ]]; then
-            echo "::error::Expected 5 checksum lines in SHA256SUMS.txt, got ${line_count}"
+          if [[ "$line_count" -ne "${#required_patterns[@]}" ]]; then
+            echo "::error::Unexpected number of checksum lines in SHA256SUMS.txt, got ${line_count}"
             exit 1
           fi
 
@@ -625,8 +696,12 @@ jobs:
           {
             echo "Pre-release of **Cambuz PDF Reader ${PKG_VERSION}** (\`${TAG}\`) for Windows x64, Linux x64 *(experimental)* and macOS Apple Silicon *(experimental)*."
             echo ""
-            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — all five jobs green. ${signing_note}"
+            echo "Built from commit \`${short_sha}\` (${GITHUB_SHA}) by [CI run ${GITHUB_RUN_ID}](${run_url}) — platform checks passed. ${signing_note}"
             echo ""
+            if compgen -G 'release-out/*-android.apk' >/dev/null; then
+              echo "Android: download the signed APK for Android 8.0 or newer."
+              echo ""
+            fi
             echo "Verify after download: \`Get-FileHash -Algorithm SHA256 <file>\` (PowerShell) or \`sha256sum -c SHA256SUMS.txt\` (Linux/macOS)."
           } > "$notes_file"
 

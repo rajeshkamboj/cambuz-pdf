@@ -2116,3 +2116,17 @@ Cambuz PDF Reader
 8. **Theme switching**: CSS variables properly swap between dark and light palettes
 9. **Error handling**: Error display shown for invalid files, dismissed by user action
 10. **Drag and drop**
+## Android APK
+
+The Android app opens local PDFs through the system file picker or **Open with** and renders individual pages offline. Android 8.0 or newer is required. For a local preview, use JDK 17, Gradle 8.9 and Android SDK 35, then run `gradle -p android assembleDebug`.
+
+Pull request builds upload a debug-signed APK with a separate preview application ID. To publish update-compatible release APKs, configure these repository Actions secrets once:
+
+| Secret | Value |
+| --- | --- |
+| ANDROID_KEYSTORE_BASE64 | Base64 contents of your private Android signing keystore |
+| ANDROID_KEYSTORE_PASSWORD | Keystore password |
+| ANDROID_KEY_ALIAS | Signing key alias |
+| ANDROID_KEY_PASSWORD | Signing key password |
+
+Create a dedicated signing key if needed with `keytool -genkeypair -keystore cambuz-android.p12 -storetype PKCS12 -alias cambuz -keyalg RSA -keysize 3072 -validity 10000`. Keep a private backup. Use the store password for the PKCS12 key password. Main and release-tag builds sign the APK, verify it, and include it in the combined SHA256SUMS.txt. When signing is unconfigured the preview stays in Actions and desktop releases continue.

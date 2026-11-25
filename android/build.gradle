@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' version '8.7.3' }
+
+android {
+    namespace 'com.cambuz.pdfreader'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.cambuz.pdfreader'
+        minSdk 26
+        targetSdk 35
+        versionCode = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+        versionName = new groovy.json.JsonSlurper().parse(file('../package.json')).version
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.preview'; versionNameSuffix '-preview' }
+    }
+}
