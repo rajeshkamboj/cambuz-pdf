@@ -1,4 +1,4 @@
-# Printing workflow: prepared PDF → system viewer
+# Printing a prepared PDF
 
 Status: implemented in code; physical Windows printing is **not yet verified**.
 
@@ -30,7 +30,26 @@ References:
 - Electron `webContents.print`: <https://www.electronjs.org/docs/latest/api/web-contents#contentsprintoptions-callback>
 - Electron `shell.openPath`: <https://www.electronjs.org/docs/latest/api/shell#shellopenpathpath>
 
-## Current responsibilities
+## Windows native printing
+
+The Windows Print button passes the exact previewed PDF to a separate x64 helper.
+The helper opens a Windows PrintDialog for printer selection, copies and driver
+preferences. On confirmation, PDFium renders each sheet over opaque white, then
+PrintDocument transfers it to the selected Windows queue. The job centers the
+prepared size on the driver paper, shrinking oversized sheets. Hardware margins
+can clip artwork. A queue submission does not confirm paper delivery.
+
+The Windows build compiles the helper with the .NET Framework compiler and
+extracts a checksum-pinned PDFium DLL and licenses from the pypdfium2 Windows
+wheel. For development on Windows run `npm run build:native-print` before
+`npm start`. Packaged builds include these resources for offline use.
+
+For hardware acceptance, print a two-sheet document on the affected printer,
+including black text, a white margin, and a dark or translucent graphic. Verify
+both sheets, their orientation and scale. Repeat using the driver's duplex
+option where supported. Cancel a job at the Windows dialog and check the queue.
+
+## Alternative system-viewer and export actions
 
 ### Cambuz
 
@@ -51,8 +70,7 @@ References:
 - Control automatic or manual duplex and all paper-reload prompts.
 - Cancel or submit the physical job.
 
-Cambuz does not submit a job, select a printer, or launch another application
-until the user clicks the corresponding action.
+Opening the system viewer leaves printer selection and submission to that application.
 
 ## Manual duplex consequence
 

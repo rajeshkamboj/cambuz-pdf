@@ -8,10 +8,10 @@
     "start": "electron .",
     "serve": "node server.js",
     "build": "npm run build:win",
-    "build:win": "node scripts/stage-app.mjs && electron-builder --win --x64 --publish never",
+    "build:win": "npm run build:native-print && node scripts/stage-app.mjs && electron-builder --win --x64 --publish never",
     "build:linux": "node scripts/stage-app.mjs && electron-builder --linux --x64 --publish never",
     "build:mac": "node scripts/stage-app.mjs && electron-builder --mac --arm64 --publish never",
-    "build:dir": "node scripts/stage-app.mjs && electron-builder --win --x64 --dir --publish never",
+    "build:dir": "npm run build:native-print && node scripts/stage-app.mjs && electron-builder --win --x64 --dir --publish never",
     "samples": "node scripts/create-samples.js && python3 scripts/create-unicode-samples.py",
     "samples:js": "node scripts/create-samples.js",
     "samples:unicode": "python3 scripts/create-unicode-samples.py",
@@ -32,7 +32,9 @@
     "test:phase11": "node scripts/test-phase11.mjs",
     "test:release": "node scripts/test-release-automation.mjs",
     "validate:landing": "node scripts/validate-landing-content.mjs",
-    "sync:readme": "node scripts/sync-release-readme.mjs"
+    "sync:readme": "node scripts/sync-release-readme.mjs",
+    "build:native-print": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-print.ps1",
+    "postbuild:win": "node scripts/test-native-print.mjs"
   },
   "author": "Cambuz",
   "license": "MIT",
@@ -98,6 +100,12 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": ".native-print",
+          "to": "native-print"
         }
       ]
     },

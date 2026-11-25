@@ -406,9 +406,7 @@ ipcMain.handle('dialog-open-pdfs', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-// Print-ready artifacts are bounded at the IPC boundary. Cambuz no longer
-// enumerates printers or submits silent/direct jobs: the prepared PDF is handed
-// to the registered system viewer only after an explicit user action.
+// Shared input bound for prepared PDF actions.
 const MAX_PRINT_PDF_BYTES = 250 * 1024 * 1024;
 
 function asPdfBuffer(input) {
@@ -454,6 +452,35 @@ function scheduleSystemViewerCleanup(copy) {
   timer.unref?.();
   viewerCleanupTimers.set(copy.directory, timer);
 }
+
+let nativePrintActive = false;
+ipcMain.handle('native-print', async (event, rawBytes, name) => {
+  if (process.platform !== 'win32' || event.sender !== mainWindow?.webContents ||
+      event.senderFrame !== event.sender.mainFrame) return { ok: false, error: 'Native printing is unavailable.' };
+  if (nativePrintActive) return { ok: false, error: 'Another print dialog is open.' };
+  nativePrintActive = true;
+  let copy;
+  try {
+    copy = await createViewerCopy({
+      tempRoot: app.getPath('temp'), pdfBuffer: validatePdfForSave(rawBytes), suggestedName: safeFileName(name),
+    });
+    const helper = app.isPackaged
+      ? path.join(process.resourcesPath, 'native-print', 'CambuzPrint.exe')
+      : path.join(__dirname, '.native-print', 'CambuzPrint.exe');
+    return await new Promise((resolve) => {
+      require('node:child_process').execFile(helper, [copy.filePath], { windowsHide: true }, (error, stdout, stderr) => {
+        if (!error) resolve({ ok: true });
+        else if (error.code === 2) resolve({ canceled: true });
+        else resolve({ ok: false, error: stderr.trim() || error.message });
+      });
+    });
+  } catch (error) {
+    return { ok: false, error: error.message };
+  } finally {
+    if (copy) await removeViewerCopy(copy).catch(() => {});
+    nativePrintActive = false;
+  }
+});
 
 ipcMain.handle('open-pdf-in-system-viewer', async (_event, rawBytes, rawOptions = {}) => {
   let copy = null;
