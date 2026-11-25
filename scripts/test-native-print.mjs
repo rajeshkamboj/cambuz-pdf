@@ -16,7 +16,7 @@ try {
   execFileSync(path.join(process.env.WINDIR, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), [
     '/nologo', '/platform:x64', '/main:NativePrintSmoke', '/out:' + smoke,
     '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
-    'native/printing/NativePrint.cs', 'scripts/NativePrintSmoke.cs',
+    path.resolve('native/printing/NativePrint.cs'), path.resolve('scripts/NativePrintSmoke.cs'),
   ], { stdio: 'inherit' });
   const pdf = await PDFDocument.create();
   for (const red of [0, 1]) {
