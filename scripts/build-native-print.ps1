@@ -24,5 +24,5 @@ try {
     } finally { $zip.Dispose() }
 } finally { Remove-Item $archive -ErrorAction SilentlyContinue }
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $csc /nologo /platform:x64 /target:winexe "/out:$out\CambuzPrint.exe" /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "$root\native\printing\NativePrint.cs"
+& $csc /nologo /platform:x64 /target:winexe "/out:$out\CambuzPrint.exe" /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "$root\native\printing\NativePrint.cs" "$root\native\printing\PrinterOptions.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Native print helper compilation failed' }

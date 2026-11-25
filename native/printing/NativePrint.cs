@@ -83,15 +83,15 @@ internal static class NativePrint
     }
 
     // The Windows regression harness supplies a file-backed printer here.
-    internal static int Run(string filename, Func<PrintDocument, bool> choose)
+    internal static int Run(string filename, Func<PrintDocument, bool> choose, Action<PrintDocument> configure = null)
     {
         using (var file = File.OpenRead(filename))
         using (var map = MemoryMappedFile.CreateFromFile(file, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, true))
         using (var view = map.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
-            return PrintMapped(view, file.Length, filename, choose);
+            return PrintMapped(view, file.Length, filename, choose, configure);
     }
 
-    private static int PrintMapped(MemoryMappedViewAccessor view, long length, string filename, Func<PrintDocument, bool> choose)
+    private static int PrintMapped(MemoryMappedViewAccessor view, long length, string filename, Func<PrintDocument, bool> choose, Action<PrintDocument> configure)
     {
         FPDF_InitLibrary();
         IntPtr doc = IntPtr.Zero;
@@ -101,6 +101,7 @@ internal static class NativePrint
             int count = FPDF_GetPageCount(doc);
             if (count < 1) throw new InvalidDataException("No sheets to print.");
             using (PrintDocument job = new PrintDocument()) {
+                if (configure != null) configure(job);
                 job.DocumentName = Path.GetFileNameWithoutExtension(filename);
                 job.PrintController = new StandardPrintController();
                 IntPtr first = OpenPage(doc, 0);
@@ -148,8 +149,23 @@ internal static class NativePrint
                     Console.WriteLine(job.PrinterSettings.IsValid ? job.PrinterSettings.PrinterName : "");
                 return 0;
             }
+            if (args[0] == "--printers") { PrinterOptions.List(); return 0; }
             var owner = new ReaderWindow(args[1]);
             Application.EnableVisualStyles();
+            if (args[0] == "--preferences")
+                return PrinterOptions.Preferences(owner.Handle, args[2], Console.ReadLine());
+            if (args.Length == 5) {
+                string preferences = Console.ReadLine();
+                return Run(args[0], delegate(PrintDocument job) {
+                    short copies = Int16.Parse(args[3]);
+                    if (copies < 1 || (copies > 1 && copies > job.PrinterSettings.MaximumCopies))
+                        throw new InvalidOperationException("The selected printer does not support this copy count.");
+                    job.PrinterSettings.Copies = copies;
+                    job.PrinterSettings.Collate = args[4] == "1";
+                    Console.WriteLine("confirmed");
+                    return Console.ReadLine() == "submit";
+                }, job => PrinterOptions.Configure(job, args[2], preferences));
+            }
             return Run(args[0], delegate(PrintDocument job) {
                 using (PrintDialog dialog = new PrintDialog()) {
                     dialog.Document = job;

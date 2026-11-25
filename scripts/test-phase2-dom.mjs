@@ -106,10 +106,9 @@ assert(
   'Ink Saver preparation preset is available'
 );
 assert(
-  !document.getElementById('print-printer') && !document.getElementById('print-copies') &&
-  !document.getElementById('print-duplex') && !document.getElementById('print-collate') &&
-  !document.getElementById('print-manual-panel'),
-  'Cambuz UI has no printer selector, copy/duplex controls or custom manual-duplex pass'
+  document.getElementById('print-printer') && document.getElementById('print-copies') &&
+  document.getElementById('print-collate') && document.getElementById('print-preferences'),
+  'Windows job controls include printer selection, copies, collation and driver preferences'
 );
 const systemNote = document.querySelector('.print-system-note');
 assert(
@@ -219,6 +218,27 @@ assert(sameSettingsKey.includes('"paperSize":"A4"'), 'preview key tracks PDF pre
   await printController.printNative();
   assert(/Windows print queue/.test(printController.ui.status.textContent),
     'successful native submission reports the queue result');
+
+  const deviceList = document.getElementById('print-printer');
+  deviceList.add(new window.Option('HP LaserJet 1020', 'HP LaserJet 1020', true, true));
+  document.getElementById('print-copies').value = '2';
+  window.cambuzAPI.printerPreferences = async () => ({ token: 'job-settings' });
+  printController.updateActionState();
+  document.getElementById('print-preferences').click();
+  await Promise.resolve();
+  let job;
+  window.cambuzAPI.printNative = async (bytes, name, device) => {
+    job = { bytes, device };
+    return { ok: true };
+  };
+  await printController.printNative();
+  assert(job.bytes === preparedBytes && job.device.name === 'HP LaserJet 1020' &&
+    job.device.copies === 2 && job.device.collate && job.device.token === 'job-settings',
+    'driver choices accompany the exact prepared PDF without rebuilding it');
+  deviceList.selectedIndex = 0;
+  deviceList.dispatchEvent(new window.Event('change'));
+  assert(!printController.preferenceToken && document.getElementById('print-copies').disabled,
+    'switching to Windows dialog discards device-specific settings');
 
   printController.opened = false;
   printController.ui.dialog.style.display = 'none';

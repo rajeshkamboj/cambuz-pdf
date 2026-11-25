@@ -14,12 +14,15 @@ try {
   const printerReply = execFileSync(path.join(resources, 'CambuzPrint.exe'), ['--default-printer'],
     { encoding: 'utf8', timeout: 15000 });
   assert.match(printerReply, /^[^\r\n]*\r?\n$/, 'packaged helper reports Windows default printer on stdout');
+  const list = execFileSync(path.join(resources, 'CambuzPrint.exe'), ['--printers'], { encoding: 'utf8', timeout: 15000 });
+  const defaults = list.trim().split(/\r?\n/).filter(line => line.split('|')[1] === '1');
+  if (printerReply.trim()) assert.equal(Buffer.from(defaults[0].split('|')[0], 'base64').toString(), printerReply.trim());
   fs.copyFileSync(path.join(resources, 'pdfium.dll'), path.join(temp, 'pdfium.dll'));
   const smoke = path.join(temp, 'smoke.exe');
   execFileSync(path.join(process.env.WINDIR, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), [
     '/nologo', '/platform:x64', '/main:NativePrintSmoke', '/out:' + smoke,
     '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
-    path.resolve('native/printing/NativePrint.cs'), path.resolve('scripts/NativePrintSmoke.cs'),
+    path.resolve('native/printing/NativePrint.cs'), path.resolve('native/printing/PrinterOptions.cs'), path.resolve('scripts/NativePrintSmoke.cs'),
   ], { stdio: 'inherit' });
   const pdf = await PDFDocument.create();
   for (const red of [0, 1]) {

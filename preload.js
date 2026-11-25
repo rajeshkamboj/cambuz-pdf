@@ -14,10 +14,11 @@ contextBridge.exposeInMainWorld('cambuzAPI', {
   // then is returned ({ file }) instead of being pushed.
   rendererReady: () => ipcRenderer.invoke('renderer-ready'),
   onOpenFilePath: (callback) => ipcRenderer.on('open-file-path', callback),
-  getDefaultPrinter: process.platform === 'win32' ? () => ipcRenderer.invoke('default-printer') : undefined,
+  listPrintDevices: process.platform === 'win32' ? () => ipcRenderer.invoke('list-print-devices') : undefined,
+  printerPreferences: (name, token) => ipcRenderer.invoke('print-device-preferences', name, token),
   cancelNativePrint: process.platform === 'win32' ? () => ipcRenderer.invoke('cancel-native-print') : undefined,
   printNative: process.platform === 'win32'
-    ? (bytes, name) => ipcRenderer.invoke('native-print', bytes, name)
+    ? (bytes, name, device) => ipcRenderer.invoke('native-print', bytes, name, device)
     : undefined,
   openPdfInSystemViewer: (pdfBytes, options) => ipcRenderer.invoke('open-pdf-in-system-viewer', pdfBytes, options),
   savePrintReadyPdf: (pdfBytes, options) => ipcRenderer.invoke('save-print-ready-pdf', pdfBytes, options),
