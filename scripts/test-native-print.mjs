@@ -11,6 +11,9 @@ try {
   for (const name of ['CambuzPrint.exe', 'pdfium.dll', 'licenses']) {
     assert.ok(fs.existsSync(path.join(resources, name)), name);
   }
+  const printerReply = execFileSync(path.join(resources, 'CambuzPrint.exe'), ['--default-printer'],
+    { encoding: 'utf8', timeout: 15000 });
+  assert.match(printerReply, /^[^\r\n]*\r?\n$/, 'packaged helper reports Windows default printer on stdout');
   fs.copyFileSync(path.join(resources, 'pdfium.dll'), path.join(temp, 'pdfium.dll'));
   const smoke = path.join(temp, 'smoke.exe');
   execFileSync(path.join(process.env.WINDIR, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), [

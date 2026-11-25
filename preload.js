@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('cambuzAPI', {
   // then is returned ({ file }) instead of being pushed.
   rendererReady: () => ipcRenderer.invoke('renderer-ready'),
   onOpenFilePath: (callback) => ipcRenderer.on('open-file-path', callback),
+  getDefaultPrinter: process.platform === 'win32' ? () => ipcRenderer.invoke('default-printer') : undefined,
+  cancelNativePrint: process.platform === 'win32' ? () => ipcRenderer.invoke('cancel-native-print') : undefined,
   printNative: process.platform === 'win32'
     ? (bytes, name) => ipcRenderer.invoke('native-print', bytes, name)
     : undefined,

@@ -132,16 +132,34 @@ internal static class NativePrint
         }
     }
 
+    private sealed class ReaderWindow : IWin32Window
+    {
+        public IntPtr Handle { get; private set; }
+        public ReaderWindow(string value) { Handle = new IntPtr(long.Parse(value)); }
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
         try {
+            Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
+            if (args.Length == 1 && args[0] == "--default-printer") {
+                using (PrintDocument job = new PrintDocument())
+                    Console.WriteLine(job.PrinterSettings.IsValid ? job.PrinterSettings.PrinterName : "");
+                return 0;
+            }
+            var owner = new ReaderWindow(args[1]);
             Application.EnableVisualStyles();
             return Run(args[0], delegate(PrintDocument job) {
                 using (PrintDialog dialog = new PrintDialog()) {
                     dialog.Document = job;
                     dialog.UseEXDialog = true;
-                    return dialog.ShowDialog() == DialogResult.OK;
+                    Console.WriteLine("dialog");
+                    Console.Out.Flush();
+                    if (dialog.ShowDialog(owner) != DialogResult.OK) return false;
+                    Console.WriteLine("confirmed");
+                    Console.Out.Flush();
+                    return Console.ReadLine() == "submit";
                 }
             });
         } catch (Exception error) { Console.Error.WriteLine(error.Message); return 1; }

@@ -201,7 +201,13 @@ assert(sameSettingsKey.includes('"paperSize":"A4"'), 'preview key tracks PDF pre
   await printController.printNative();
   assert(submitted.length === 1 && submitted[0] === preparedBytes && printController.busy,
     'one native dialog receives the previewed bytes, including after a double-click');
-  releaseDialog({ canceled: true });
+  const stop = document.getElementById('btn-print-stop');
+  assert(stop.style.display !== 'none', 'pending native dialog exposes a cancellation action');
+  window.cambuzAPI.cancelNativePrint = async () => {
+    releaseDialog({ canceled: true });
+    return true;
+  };
+  stop.click();
   await firstPrint;
   assert(/cancelled/i.test(printController.ui.status.textContent) && !printController.busy,
     'native cancellation restores the dialog for retry');
