@@ -76,6 +76,7 @@ export class PrintController {
       documentLabel: element('print-document-label'),
       closeButton: element('btn-print-close'),
       cancelButton: element('btn-print-cancel'),
+      nativeButton: element('btn-print-native'),
       openSystemButton: element('btn-print-open-system'),
       openSystemLabel: element('print-open-system-label'),
       downloadButton: element('btn-print-download'),
@@ -153,6 +154,15 @@ export class PrintController {
     this.ui.dialog.addEventListener('keydown', (event) => {
       if (event.key === 'Tab') this.trapFocus(event);
     });
+    if (typeof window.cambuzAPI?.printNative === 'function') {
+      this.ui.nativeButton.style.display = '';
+      this.ui.openSystemButton.className = 'btn-secondary';
+      const note = element('print-system-note-title');
+      note.textContent = 'Windows printer settings';
+      note.nextElementSibling.textContent = 'Choose Print to select a printer, copies and device preferences. Match the driver paper size to the prepared sheet. Content inside the printer’s hardware margins may be clipped.';
+      note.nextElementSibling.nextElementSibling.textContent = 'For two-sided output, select a duplex option supported by your printer driver.';
+    }
+    this.ui.nativeButton.addEventListener('click', () => this.printNative());
     this.ui.openSystemButton.addEventListener('click', () => this.openInSystemViewer());
     this.ui.downloadButton.addEventListener('click', () => this.downloadPdf());
     this.ui.previewPrevious.addEventListener('click', () => this.showPreviewPage(this.previewPageNumber - 1));
@@ -388,6 +398,7 @@ export class PrintController {
       this.latestPreviewKey === this.previewKey(validation.settings)
     );
     this.ui.openSystemButton.disabled = !previewReady || this.busy;
+    this.ui.nativeButton.disabled = !previewReady || this.busy;
     this.ui.downloadButton.disabled = !previewReady || this.busy;
     this.ui.cancelButton.disabled = this.busy;
     this.ui.closeButton.disabled = this.busy;
@@ -627,6 +638,26 @@ export class PrintController {
     if (!result?.bytes || !this.opened || !current.valid ||
         this.previewKey(current.settings) !== key || this.latestPreviewKey !== key) return null;
     return result.bytes;
+  }
+
+  async printNative() {
+    if (!this.opened || this.busy || !window.cambuzAPI?.printNative) return;
+    this.busy = true;
+    this.updateActionState();
+    try {
+      const bytes = await this.currentPreparedBytes();
+      if (!bytes) return;
+      this.setStatus('Choose your Windows printer and settings…');
+      const result = await window.cambuzAPI.printNative(bytes, this.preparedFileName());
+      if (result?.canceled) this.setStatus('Printing cancelled.');
+      else if (result?.ok) this.setStatus('Job submitted to the Windows print queue.');
+      else throw new Error(result?.error || 'The print helper did not complete.');
+    } catch (error) {
+      this.setStatus(`Windows printing failed: ${error.message}`, true);
+    } finally {
+      this.busy = false;
+      this.updateActionState();
+    }
   }
 
   async openInSystemViewer() {

@@ -191,6 +191,29 @@ assert(sameSettingsKey.includes('"paperSize":"A4"'), 'preview key tracks PDF pre
     printController.isOpen && !printController.busy,
   'system-viewer launch failure is reported without crashing or closing the document');
 
+  let releaseDialog;
+  const submitted = [];
+  window.cambuzAPI.printNative = (bytes) => {
+    submitted.push(bytes);
+    return new Promise(resolve => { releaseDialog = resolve; });
+  };
+  const firstPrint = printController.printNative();
+  await printController.printNative();
+  assert(submitted.length === 1 && submitted[0] === preparedBytes && printController.busy,
+    'one native dialog receives the previewed bytes, including after a double-click');
+  releaseDialog({ canceled: true });
+  await firstPrint;
+  assert(/cancelled/i.test(printController.ui.status.textContent) && !printController.busy,
+    'native cancellation restores the dialog for retry');
+  window.cambuzAPI.printNative = async () => ({ ok: false, error: 'Printer offline' });
+  await printController.printNative();
+  assert(/Printer offline/.test(printController.ui.status.textContent) && openCalls.length === 1,
+    'native error is visible without launching a fallback viewer');
+  window.cambuzAPI.printNative = async () => ({ ok: true });
+  await printController.printNative();
+  assert(/Windows print queue/.test(printController.ui.status.textContent),
+    'successful native submission reports the queue result');
+
   printController.opened = false;
   printController.ui.dialog.style.display = 'none';
   delete window.cambuzAPI;

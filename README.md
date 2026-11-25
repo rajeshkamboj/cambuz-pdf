@@ -127,6 +127,7 @@ exercised on GitHub runners against the *packaged* app — see
   Preparation covers validated page selection, portrait/landscape,
   A4/A3/A5/Letter/Legal/Tabloid, five margin presets plus custom (0–50 mm),
   fit/actual/custom scaling, and 2-up / 4-up sheets.
+- **Print…** on Windows opens the native printer dialog. PDFium renders each prepared sheet onto an opaque bitmap and sends it through the chosen Windows driver. Select copies and printer preferences there.
 - **Open PDF in system viewer** is an explicit action. It opens the prepared artifact
   with the operating system's registered PDF application; use that application's normal
   Print command to choose an installed printer, copies, collation, page range, duplex,
