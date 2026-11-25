@@ -5,7 +5,11 @@ New-Item -ItemType Directory -Force $out | Out-Null
 $archive = Join-Path $env:TEMP "cambuz-pdfium-$PID.zip"
 try {
     Invoke-WebRequest -UseBasicParsing -Uri 'https://files.pythonhosted.org/packages/fe/7f/8aa446529fa14523e5c18f89e823afc95526689f76a75efe68a82a10d850/pypdfium2-5.15.2-py3-none-win_amd64.whl' -OutFile $archive
-    if ((Get-FileHash $archive).Hash -ne '74d1bace34fb01c660d0b64344d5a4b7d276942b7c6623c88ab59ea21c5acfbd') { throw 'PDFium checksum mismatch' }
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($archive)
+    try { $digest = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') }
+    finally { $stream.Dispose(); $sha256.Dispose() }
+    if ($digest -ne '74d1bace34fb01c660d0b64344d5a4b7d276942b7c6623c88ab59ea21c5acfbd') { throw 'PDFium checksum mismatch' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     try {
